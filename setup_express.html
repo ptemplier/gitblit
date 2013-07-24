@@ -97,15 +97,15 @@
 <li class='dropdown'> <!-- Menu -->
 <a class='dropdown-toggle' href='#' data-toggle='dropdown'>downloads<b class='caret'></b></a>
 <ul class='dropdown-menu'>
-<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=gitblit-1.3.0.zip'>Gitblit GO (Windows)</a></li>
-<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=gitblit-1.3.0.tar.gz'>Gitblit GO (Linux/OSX)</a></li>
-<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=gitblit-1.3.0.war'>Gitblit WAR</a></li>
-<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=express-1.3.0.zip'>Gitblit Express</a></li>
+<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=gitblit-1.3.1.zip'>Gitblit GO (Windows)</a></li>
+<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=gitblit-1.3.1.tar.gz'>Gitblit GO (Linux/OSX)</a></li>
+<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=gitblit-1.3.1.war'>Gitblit WAR</a></li>
+<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=express-1.3.1.zip'>Gitblit Express</a></li>
 <li class='divider'></li>
-<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=manager-1.3.0.zip'>Gitblit Manager</a></li>
-<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=fedclient-1.3.0.zip'>Federation Client</a></li>
+<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=manager-1.3.1.zip'>Gitblit Manager</a></li>
+<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=fedclient-1.3.1.zip'>Federation Client</a></li>
 <li class='divider'></li>
-<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=gbapi-1.3.0.zip'>API Library</a></li>
+<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=gbapi-1.3.1.zip'>API Library</a></li>
 </ul></li> <!-- End Menu -->
 <li class='dropdown'> <!-- Menu -->
 <a class='dropdown-toggle' href='#' data-toggle='dropdown'>links<b class='caret'></b></a>
@@ -139,6 +139,9 @@ as Gitblit Express is not a source distribution to be built with Maven on OpenSh
 <p>Gitblit automatically adjusts itself to running on OpenShift.  Repositories, users,
 federation proposals, setting overrides, and Groovy push scripts are stored in <em>OPENSHIFT_DATA_DIR</em>.</p>
 
+<h3 class="section" id="H2"><a href="#H2" class="sectionlink"><i class="icon-share-alt"> </i></a>Recommended Settings</h3>
+<p>You should disable the git daemon by setting <em>git.daemonPort=0</em>.</p>
+
 <p>It is recommended to enable all RPC settings in the <code>web.xml</code> file to allow remote
 administration and, more importantly, configuration of your Gitblit Express
 installation using the Gitblit Manager.</p>
@@ -157,16 +160,17 @@ doing:</p>
 <li><em>realm.userService</em> (for standard users.conf)</li>
 </ul>
 
-<p>Additionally, it is recommended to force your Gitblit installation to cleanup up
-older versions on your OpenShift filesystem to maximize available space for your
-repositories.</p>
+<h3 class="section" id="H3"><a href="#H3" class="sectionlink"><i class="icon-share-alt"> </i></a>Native Git Failures</h3>
+<p>Unfortunately, sometime in early 2013 RedHat changed their SSL certificate such that cloning from/pushing to Gitblit Express over https fails due to an SNI (server name indication) TLS alert.  There is no known workaround for native git and https.</p>
 
-<p>Append the following command to your ./openshift/action_hooks/build file:</p>
+<p>However, if your git client is JGit-based, like Eclipse/EGit, then you can workaround this problem and happily push/clone using https and OpenShift.</p>
 
-<pre><code>rm -fr $OPENSHIFT_APP_DIR/jbossas-7.0/standalone/tmp/vfs/*
-</code></pre>
+<p>Luckily, Java 6-based clients ignore SNI alerts but when using Java 7-based clients, SNI checking is enabled by default.  You can disable SNI alerts by specifying the JVM system parameter <code>-Djsse.enableSNIExtension=false</code> when your Java-based client launches.</p>
 
-<p>Lastly, you may want to play with the heap and permgen settings of your Gitblit
+<p>For Eclipse, you can append <code>-Djsse.enableSNIExtension=false</code> to your <em>eclipse.ini</em> file.</p>
+
+<h3 class="section" id="H4"><a href="#H4" class="sectionlink"><i class="icon-share-alt"> </i></a>Heap and PermGen</h3>
+<p>You may want to play with the heap and permgen settings of your Gitblit
 instance because the default heap for the JVM is 95 MB, which may be a little
 tight.</p>
 
@@ -189,7 +193,7 @@ please see this excellent turorial:</p>
 
 <p><a href="https://github.com/opensas/play-demo/wiki/Step-12.5---deploy-to-openshift">Deploying to OpenShift</a>
 <!-- End Markdown -->
-<div ><ul class="pager"> <li class="next"><a href="upgrade_express.html">upgrade Express &rarr;</a></li></ul></div><footer class="footer"><p class="pull-right">generated 2013-07-14</p>
+<div ><ul class="pager"> <li class="next"><a href="upgrade_express.html">upgrade Express &rarr;</a></li></ul></div><footer class="footer"><p class="pull-right">generated 2013-07-24</p>
 <p>The content of this page is licensed under the <a href="http://creativecommons.org/licenses/by/3.0">Creative Commons Attribution 3.0 License</a>.</p>
 </footer>
 </div>

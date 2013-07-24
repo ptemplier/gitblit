@@ -97,15 +97,15 @@
 <li class='dropdown'> <!-- Menu -->
 <a class='dropdown-toggle' href='#' data-toggle='dropdown'>downloads<b class='caret'></b></a>
 <ul class='dropdown-menu'>
-<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=gitblit-1.3.0.zip'>Gitblit GO (Windows)</a></li>
-<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=gitblit-1.3.0.tar.gz'>Gitblit GO (Linux/OSX)</a></li>
-<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=gitblit-1.3.0.war'>Gitblit WAR</a></li>
-<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=express-1.3.0.zip'>Gitblit Express</a></li>
+<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=gitblit-1.3.1.zip'>Gitblit GO (Windows)</a></li>
+<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=gitblit-1.3.1.tar.gz'>Gitblit GO (Linux/OSX)</a></li>
+<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=gitblit-1.3.1.war'>Gitblit WAR</a></li>
+<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=express-1.3.1.zip'>Gitblit Express</a></li>
 <li class='divider'></li>
-<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=manager-1.3.0.zip'>Gitblit Manager</a></li>
-<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=fedclient-1.3.0.zip'>Federation Client</a></li>
+<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=manager-1.3.1.zip'>Gitblit Manager</a></li>
+<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=fedclient-1.3.1.zip'>Federation Client</a></li>
 <li class='divider'></li>
-<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=gbapi-1.3.0.zip'>API Library</a></li>
+<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=gbapi-1.3.1.zip'>API Library</a></li>
 </ul></li> <!-- End Menu -->
 <li class='dropdown'> <!-- Menu -->
 <a class='dropdown-toggle' href='#' data-toggle='dropdown'>links<b class='caret'></b></a>
@@ -191,6 +191,7 @@ https://localhost:8443/feed/gitblit.git?l=50&amp;h=refs/heads/master&amp;s=james
 <tr><td>Gitblit v0.9.0 - v1.0.0</td><td>3</td></tr>
 <tr><td>Gitblit v1.1.0</td><td>4</td></tr>
 <tr><td>Gitblit v1.2.0+</td><td>5</td></tr>
+<tr><td>Gitblit v1.3.1+</td><td>6</td></tr>
 </tbody>
 </table>
 <h4 class="section" id="H8"><a href="#H8" class="sectionlink"><i class="icon-share-alt"> </i></a>Protocol Version 5</h4>
@@ -210,6 +211,7 @@ Use <em>SET_REPOSITORY_TEAM_PERMISSIONS</em> instead.</li>
 <tr><td>LIST_REPOSITORIES</td><td>-</td><td>-</td><td>1</td><td>-</td><td>Map&lt;String, RepositoryModel&gt;</td></tr>
 <tr><td>LIST_BRANCHES</td><td>-</td><td>-</td><td>1</td><td>-</td><td>Map&lt;String, List&lt;String&gt;&gt;</td></tr>
 <tr><td>LIST_SETTINGS</td><td>-</td><td><em>-</em></td><td>1</td><td>-</td><td>ServerSettings (basic keys)</td></tr>
+<tr><td>GET_USER</td><td>user name</td><td>-</td><td>6</td><td>-</td><td>UserModel</td></tr>
 <tr><td colspan="6"><em>web.enableRpcManagement=true</em></td></tr>
 <tr><td>CREATE_REPOSITORY</td><td>repository name</td><td><em>admin</em></td><td>1</td><td>RepositoryModel</td><td>-</td></tr>
 <tr><td>EDIT_REPOSITORY</td><td>repository name</td><td><em>admin</em></td><td>1</td><td>RepositoryModel</td><td>-</td></tr>
@@ -415,7 +417,7 @@ Use <em>SET_REPOSITORY_TEAM_PERMISSIONS</em> instead.</li>
 }
 </pre>
 <!-- End Markdown -->
-<div ><ul class="pager"><li class="previous"><a href="design.html">&larr; design</a></li> </ul></div><footer class="footer"><p class="pull-right">generated 2013-07-14</p>
+<div ><ul class="pager"><li class="previous"><a href="design.html">&larr; design</a></li> </ul></div><footer class="footer"><p class="pull-right">generated 2013-07-24</p>
 <p>The content of this page is licensed under the <a href="http://creativecommons.org/licenses/by/3.0">Creative Commons Attribution 3.0 License</a>.</p>
 </footer>
 </div>
