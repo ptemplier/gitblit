@@ -97,15 +97,15 @@
 <li class='dropdown'> <!-- Menu -->
 <a class='dropdown-toggle' href='#' data-toggle='dropdown'>downloads<b class='caret'></b></a>
 <ul class='dropdown-menu'>
-<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=gitblit-1.3.1.zip'>Gitblit GO (Windows)</a></li>
-<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=gitblit-1.3.1.tar.gz'>Gitblit GO (Linux/OSX)</a></li>
-<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=gitblit-1.3.1.war'>Gitblit WAR</a></li>
-<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=express-1.3.1.zip'>Gitblit Express</a></li>
+<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=gitblit-1.3.2.zip'>Gitblit GO (Windows)</a></li>
+<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=gitblit-1.3.2.tar.gz'>Gitblit GO (Linux/OSX)</a></li>
+<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=gitblit-1.3.2.war'>Gitblit WAR</a></li>
+<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=express-1.3.2.zip'>Gitblit Express</a></li>
 <li class='divider'></li>
-<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=manager-1.3.1.zip'>Gitblit Manager</a></li>
-<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=fedclient-1.3.1.zip'>Federation Client</a></li>
+<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=manager-1.3.2.zip'>Gitblit Manager</a></li>
+<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=fedclient-1.3.2.zip'>Federation Client</a></li>
 <li class='divider'></li>
-<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=gbapi-1.3.1.zip'>API Library</a></li>
+<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=gbapi-1.3.2.zip'>API Library</a></li>
 </ul></li> <!-- End Menu -->
 <li class='dropdown'> <!-- Menu -->
 <a class='dropdown-toggle' href='#' data-toggle='dropdown'>links<b class='caret'></b></a>
@@ -633,6 +633,7 @@
 <span style="color:#004000;"># com.gitblit.SalesforceUserService</span><br/>
 <span style="color:#004000;"># com.gitblit.WindowsUserService</span><br/>
 <span style="color:#004000;"># com.gitblit.PAMUserService</span><br/>
+<span style="color:#004000;"># com.gitblit.HtpasswdUserService</span><br/>
 <span style="color:#004000;"># </span><br/>
 <span style="color:#004000;"># Any custom user service implementation must have a public default constructor.</span><br/>
 <span style="color:#004000;"># </span><br/>
@@ -1013,6 +1014,11 @@
 <span style="color:#004000;"># SINCE 1.3.0</span><br/>
 <span style="color:#000080;">web.activityDurationChoices</span> = <span style="color:#800000;">1 3 7 14 21 28</span><br/>
 <br/>
+<span style="color:#004000;"># Maximum number of days of activity that may be displayed on the activity page.</span><br/>
+<span style="color:#004000;"># </span><br/>
+<span style="color:#004000;"># SINCE 1.3.2</span><br/>
+<span style="color:#000080;">web.activityDurationMaximum</span> = <span style="color:#800000;">30</span><br/>
+<br/>
 <span style="color:#004000;"># The number of days of commits to cache in memory for the dashboard, activity,</span><br/>
 <span style="color:#004000;"># and project pages.  A value of 0 will disable all caching and will parse commits</span><br/>
 <span style="color:#004000;"># in each repository per-request.  If the value &gt; 0 these pages will try to fulfill</span><br/>
@@ -1359,6 +1365,38 @@
 <span style="color:#004000;"># SINCE 1.3.1</span><br/>
 <span style="color:#000080;">realm.pam.serviceName</span> = <span style="color:#800000;">system-auth</span><br/>
 <br/>
+<span style="color:#004000;"># The HtpasswdUserService must be backed by another user service for standard user</span><br/>
+<span style="color:#004000;"># and team management and attributes. This can be one of the local Gitblit user services.</span><br/>
+<span style="color:#004000;"># default: users.conf</span><br/>
+<span style="color:#004000;"># </span><br/>
+<span style="color:#004000;"># RESTART REQUIRED</span><br/>
+<span style="color:#004000;"># BASEFOLDER</span><br/>
+<span style="color:#004000;"># SINCE 1.3.2</span><br/>
+<span style="color:#000080;">realm.htpasswd.backingUserService</span> = <span style="color:#800000;">${baseFolder}/users.conf</span><br/>
+<br/>
+<span style="color:#004000;"># The Apache htpasswd file that contains the users and passwords.</span><br/>
+<span style="color:#004000;"># default: ${baseFolder}/htpasswd</span><br/>
+<span style="color:#004000;"># </span><br/>
+<span style="color:#004000;"># RESTART REQUIRED</span><br/>
+<span style="color:#004000;"># BASEFOLDER</span><br/>
+<span style="color:#004000;"># SINCE 1.3.2</span><br/>
+<span style="color:#000080;">realm.htpasswd.userfile</span> = <span style="color:#800000;">${baseFolder}/htpasswd</span><br/>
+<br/>
+<span style="color:#004000;"># Determines how accounts are looked up upon login.</span><br/>
+<span style="color:#004000;"># </span><br/>
+<span style="color:#004000;"># If set to false, then authentication for local accounts is done against</span><br/>
+<span style="color:#004000;"># the backing user service.</span><br/>
+<span style="color:#004000;"># If set to true, then authentication will first be checked against the</span><br/>
+<span style="color:#004000;"># htpasswd store, even if the account appears as a local account in the</span><br/>
+<span style="color:#004000;"># backing user service. If the user is found in the htpasswd store, then</span><br/>
+<span style="color:#004000;"># an already existing local account will be turned into an external account.</span><br/>
+<span style="color:#004000;"># In this case an initial local password is never used and gets overwritten</span><br/>
+<span style="color:#004000;"># by the externally stored password upon login.</span><br/>
+<span style="color:#004000;"># default: false</span><br/>
+<span style="color:#004000;"># </span><br/>
+<span style="color:#004000;"># SINCE 1.3.2</span><br/>
+<span style="color:#000080;">realm.htpasswd.overrideLocalAuthentication</span> = <span style="color:#800000;">false</span><br/>
+<br/>
 <span style="color:#004000;"># The SalesforceUserService must be backed by another user service for standard user</span><br/>
 <span style="color:#004000;"># and team management.</span><br/>
 <span style="color:#004000;"># default: users.conf</span><br/>
@@ -1660,7 +1698,7 @@
 <span style="color:#000080;">server.shutdownPort</span> = <span style="color:#800000;">8081</span><br/>
 
 <!-- End Markdown -->
-<div ><ul class="pager"> <li class="next"><a href="faq.html">faq &rarr;</a></li></ul></div><footer class="footer"><p class="pull-right">generated 2013-07-24</p>
+<div ><ul class="pager"> <li class="next"><a href="faq.html">faq &rarr;</a></li></ul></div><footer class="footer"><p class="pull-right">generated 2013-08-22</p>
 <p>The content of this page is licensed under the <a href="http://creativecommons.org/licenses/by/3.0">Creative Commons Attribution 3.0 License</a>.</p>
 </footer>
 </div>

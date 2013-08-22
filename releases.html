@@ -97,15 +97,15 @@
 <li class='dropdown'> <!-- Menu -->
 <a class='dropdown-toggle' href='#' data-toggle='dropdown'>downloads<b class='caret'></b></a>
 <ul class='dropdown-menu'>
-<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=gitblit-1.3.1.zip'>Gitblit GO (Windows)</a></li>
-<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=gitblit-1.3.1.tar.gz'>Gitblit GO (Linux/OSX)</a></li>
-<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=gitblit-1.3.1.war'>Gitblit WAR</a></li>
-<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=express-1.3.1.zip'>Gitblit Express</a></li>
+<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=gitblit-1.3.2.zip'>Gitblit GO (Windows)</a></li>
+<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=gitblit-1.3.2.tar.gz'>Gitblit GO (Linux/OSX)</a></li>
+<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=gitblit-1.3.2.war'>Gitblit WAR</a></li>
+<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=express-1.3.2.zip'>Gitblit Express</a></li>
 <li class='divider'></li>
-<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=manager-1.3.1.zip'>Gitblit Manager</a></li>
-<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=fedclient-1.3.1.zip'>Federation Client</a></li>
+<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=manager-1.3.2.zip'>Gitblit Manager</a></li>
+<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=fedclient-1.3.2.zip'>Federation Client</a></li>
 <li class='divider'></li>
-<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=gbapi-1.3.1.zip'>API Library</a></li>
+<li><a href='http://code.google.com/p/gitblit/downloads/detail?name=gbapi-1.3.2.zip'>API Library</a></li>
 </ul></li> <!-- End Menu -->
 <li class='dropdown'> <!-- Menu -->
 <a class='dropdown-toggle' href='#' data-toggle='dropdown'>links<b class='caret'></b></a>
@@ -135,6 +135,61 @@
 	<table class="table">
 		<tbody>
 		<!-- RELEASE HISTORY -->
+		<tr id="1.3.2">
+			<td style="width:100px" id="1.3.2">
+				<b><a href="#1.3.2">1.3.2</a></b><br/>
+				2013-08-22
+			</td>
+			<td>		<p class="lead">Gitblit 1.3.2 released</p>		
+	
+	
+
+
+   	<h4>fixes</h4>
+	<ul>
+		<li>Fixed Gitblit Authority startup failures when using alternate user services (<a href='http://code.google.com/p/gitblit/issues/detail?id=280'>issue 280</a>)</li>
+		<li>Manually redirect after branch deletion (<a href='http://code.google.com/p/gitblit/issues/detail?id=282'>issue 282</a>)</li>
+		<li>Simplify when repository size is calculated to ensure we have one IF we want one (<a href='http://code.google.com/p/gitblit/issues/detail?id=295'>issue 295</a>)</li>
+		<li>Fixed anonymous LDAP connections (<a href='http://code.google.com/p/gitblit/issues/detail?id=297'>issue 297</a>)</li>
+		<li>Improved branch deletion-reflog interaction</li>
+		<li>Encode page url parameters as UTF-8</li>
+		<li>Encode filename for binary files on RawPage according to browser</li>
+		<li>Added pptx extension for tree page icon lookup</li>
+		<li>Fixed project links on dashboard page when web.mountParameters=false</li>
+	</ul>
+   	<h4>additions</h4>
+	<ul>
+		<li>Add setting for maximum number of days of activity to that may be requested</li>
+		<li>Added HtpasswdUserService to authenticate users against an htpasswd file</li>
+		<li>Automatically maintain the .git/description file used by some other tooling</li>
+	</ul>
+   	<h4>new settings</h4>
+	<table class="table">
+		<tr>
+			<td><em>web.activityDurationMaximum</em></td><td>30</td>
+		</tr>
+		<tr>
+			<td><em>realm.htpasswd.userFile</em></td><td>${baseFolder}/htpasswd</td>
+		</tr>
+		<tr>
+			<td><em>realm.htpasswd.overrideLocalAuthentication</em></td><td>false</td>
+		</tr>
+	</table>
+   	<h4>dependency changes</h4>
+	<ul>
+		<li>Added commons-codec 1.7</li>
+	</ul>
+   	<h4>contributors</h4>
+	<ul>
+		<li>Doug Ayers</li>
+		<li>Florian Zschocke</li>
+		<li>github/guriguri</li>
+		<li>Hugo Questroy</li>
+		<li>Ori Livneh</li>
+		<li>Tito Nobre</li>
+	</ul>
+</td>
+		</tr>
 		<tr id="1.3.1">
 			<td style="width:100px" id="1.3.1">
 				<b><a href="#1.3.1">1.3.1</a></b><br/>
@@ -1346,7 +1401,7 @@ You will need to move a few files around when upgrading.  Please review the <a h
 	</table>
 
 <!-- End Markdown -->
-<footer class="footer"><p class="pull-right">generated 2013-07-24</p>
+<footer class="footer"><p class="pull-right">generated 2013-08-22</p>
 <p>The content of this page is licensed under the <a href="http://creativecommons.org/licenses/by/3.0">Creative Commons Attribution 3.0 License</a>.</p>
 </footer>
 </div>
