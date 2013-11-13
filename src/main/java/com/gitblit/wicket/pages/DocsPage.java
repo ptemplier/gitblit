@@ -58,7 +58,7 @@ public class DocsPage extends RepositoryPage {
 		String markup = null;
 		String html = null;
 
-		List<String> roots = Arrays.asList("home");
+		List<String> roots = Arrays.asList("home", "index");
 
 		// try to find a custom index/root page
 		for (PathModel path : paths) {

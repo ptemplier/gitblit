@@ -215,7 +215,7 @@ public class PagesServlet extends HttpServlet {
 			}
 
 			// check to see if we should transform markup files
-			String ext = StringUtils.getFileExtension(resource);
+			String ext = StringUtils.getFileExtension(resource).toLowerCase();
 			if (processor.getMarkupExtensions().contains(ext)) {
 				String markup = new String(content, Constants.ENCODING);
 				MarkupDocument markupDoc = processor.parse(repository, commit.getName(), resource, markup);

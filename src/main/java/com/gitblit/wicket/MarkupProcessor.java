@@ -21,10 +21,12 @@ import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import java.text.MessageFormat;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 
 import org.apache.wicket.Page;
 import org.apache.wicket.RequestCycle;
+import org.asciidoctor.Asciidoctor;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.mylyn.wikitext.confluence.core.ConfluenceLanguage;
@@ -60,7 +62,7 @@ import com.gitblit.wicket.pages.RawPage;
 public class MarkupProcessor {
 
 	public enum MarkupSyntax {
-		PLAIN, MARKDOWN, TWIKI, TRACWIKI, TEXTILE, MEDIAWIKI, CONFLUENCE
+		PLAIN, MARKDOWN, TWIKI, TRACWIKI, TEXTILE, MEDIAWIKI, CONFLUENCE, ASCIIDOC
 	}
 
 	private Logger logger = LoggerFactory.getLogger(getClass());
@@ -73,6 +75,7 @@ public class MarkupProcessor {
 
 	public List<String> getMarkupExtensions() {
 		List<String> list = new ArrayList<String>();
+		list.addAll(settings.getStrings(Keys.web.asciidocExtensions));
 		list.addAll(settings.getStrings(Keys.web.confluenceExtensions));
 		list.addAll(settings.getStrings(Keys.web.markdownExtensions));
 		list.addAll(settings.getStrings(Keys.web.mediawikiExtensions));
@@ -88,7 +91,9 @@ public class MarkupProcessor {
 			return MarkupSyntax.PLAIN;
 		}
 
-		if (settings.getStrings(Keys.web.confluenceExtensions).contains(ext)) {
+		if (settings.getStrings(Keys.web.asciidocExtensions).contains(ext)) {
+			return MarkupSyntax.ASCIIDOC;
+		} else if (settings.getStrings(Keys.web.confluenceExtensions).contains(ext)) {
 			return MarkupSyntax.CONFLUENCE;
 		} else if (settings.getStrings(Keys.web.markdownExtensions).contains(ext)) {
 			return MarkupSyntax.MARKDOWN;
@@ -141,11 +146,14 @@ public class MarkupProcessor {
 		if (markupText != null) {
 			try {
 				switch (syntax){
+				case ASCIIDOC:
+					asciidoc(doc, repositoryName, commitId);
+					break;
 				case CONFLUENCE:
 					parse(doc, repositoryName, commitId, new ConfluenceLanguage());
 					break;
 				case MARKDOWN:
-					parse(doc, repositoryName, commitId);
+					markdown(doc, repositoryName, commitId);
 					break;
 				case MEDIAWIKI:
 					parse(doc, repositoryName, commitId, new MediaWikiLanguage());
@@ -242,7 +250,7 @@ public class MarkupProcessor {
 	 * @param repositoryName
 	 * @param commitId
 	 */
-	private void parse(final MarkupDocument doc, final String repositoryName, final String commitId) {
+	private void markdown(final MarkupDocument doc, final String repositoryName, final String commitId) {
 		LinkRenderer renderer = new LinkRenderer() {
 			@Override
 			public Rendering render(WikiLinkNode node) {
@@ -253,6 +261,18 @@ public class MarkupProcessor {
 			}
 		};
 		doc.html = MarkdownUtils.transformMarkdown(doc.markup, renderer);
+	}
+
+	/**
+	 * Parses the document as Asciidoc using Asciidoctor.
+	 *
+	 * @param doc
+	 * @param repositoryName
+	 * @param commitId
+	 */
+	private void asciidoc(final MarkupDocument doc, final String repositoryName, final String commitId) {
+		Asciidoctor asciidoctor = org.asciidoctor.Asciidoctor.Factory.create();
+		doc.html = asciidoctor.render(doc.markup, new HashMap<String, Object>());
 	}
 
 	private String getWicketUrl(Class<? extends Page> pageClass, final String repositoryName, final String commitId, final String document) {
