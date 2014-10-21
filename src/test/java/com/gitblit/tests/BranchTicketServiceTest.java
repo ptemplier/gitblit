@@ -17,16 +17,20 @@ package com.gitblit.tests;
 
 import com.gitblit.IStoredSettings;
 import com.gitblit.manager.INotificationManager;
+import com.gitblit.manager.IPluginManager;
 import com.gitblit.manager.IRepositoryManager;
 import com.gitblit.manager.IRuntimeManager;
 import com.gitblit.manager.IUserManager;
 import com.gitblit.manager.NotificationManager;
+import com.gitblit.manager.PluginManager;
 import com.gitblit.manager.RepositoryManager;
 import com.gitblit.manager.RuntimeManager;
 import com.gitblit.manager.UserManager;
 import com.gitblit.models.RepositoryModel;
 import com.gitblit.tickets.BranchTicketService;
 import com.gitblit.tickets.ITicketService;
+import com.gitblit.utils.XssFilter;
+import com.gitblit.utils.XssFilter.AllowXssFilter;
 
 /**
  * Tests the branch ticket service.
@@ -48,14 +52,16 @@ public class BranchTicketServiceTest extends TicketServiceTest {
 	protected ITicketService getService(boolean deleteAll) throws Exception {
 
 		IStoredSettings settings = getSettings(deleteAll);
-
-		IRuntimeManager runtimeManager = new RuntimeManager(settings).start();
+		XssFilter xssFilter = new AllowXssFilter();
+		IRuntimeManager runtimeManager = new RuntimeManager(settings, xssFilter).start();
+		IPluginManager pluginManager = new PluginManager(runtimeManager).start();
 		INotificationManager notificationManager = new NotificationManager(settings).start();
-		IUserManager userManager = new UserManager(runtimeManager).start();
-		IRepositoryManager repositoryManager = new RepositoryManager(runtimeManager, userManager).start();
+		IUserManager userManager = new UserManager(runtimeManager, pluginManager).start();
+		IRepositoryManager repositoryManager = new RepositoryManager(runtimeManager, pluginManager, userManager).start();
 
 		BranchTicketService service = new BranchTicketService(
 				runtimeManager,
+				pluginManager,
 				notificationManager,
 				userManager,
 				repositoryManager).start();

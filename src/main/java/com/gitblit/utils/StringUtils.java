@@ -129,6 +129,8 @@ public class StringUtils {
 				retStr.append("%20");
 			} else if (inStr.charAt(i) == '&') {
 				retStr.append("%26");
+			} else if (inStr.charAt(i) == '+') {
+				retStr.append("%2B");
 			} else {
 				retStr.append(inStr.charAt(i));
 			}
@@ -307,7 +309,7 @@ public class StringUtils {
 	 * @param bytes
 	 * @return byte array as hex string
 	 */
-	private static String toHex(byte[] bytes) {
+	public static String toHex(byte[] bytes) {
 		StringBuilder sb = new StringBuilder(bytes.length * 2);
 		for (int i = 0; i < bytes.length; i++) {
 			if ((bytes[i] & 0xff) < 0x10) {
@@ -398,7 +400,7 @@ public class StringUtils {
 	 * @return the first invalid character found or null if string is acceptable
 	 */
 	public static Character findInvalidCharacter(String name) {
-		char[] validChars = { '/', '.', '_', '-', '~' };
+		char[] validChars = { '/', '.', '_', '-', '~', '+' };
 		for (char c : name.toCharArray()) {
 			if (!Character.isLetterOrDigit(c)) {
 				boolean ok = false;
@@ -642,7 +644,7 @@ public class StringUtils {
 				// ignore unsupported charsets
 			}
 		}
-		if (value.startsWith("\uFEFF")) {
+		if (value != null && value.startsWith("\uFEFF")) {
 			// strip UTF-8 BOM
             return value.substring(1);
         }

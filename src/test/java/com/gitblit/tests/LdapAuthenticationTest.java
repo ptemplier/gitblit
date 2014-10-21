@@ -32,12 +32,15 @@ import com.gitblit.Constants.AccountType;
 import com.gitblit.IStoredSettings;
 import com.gitblit.Keys;
 import com.gitblit.auth.LdapAuthProvider;
+import com.gitblit.manager.AuthenticationManager;
 import com.gitblit.manager.IUserManager;
 import com.gitblit.manager.RuntimeManager;
 import com.gitblit.manager.UserManager;
 import com.gitblit.models.TeamModel;
 import com.gitblit.models.UserModel;
 import com.gitblit.tests.mock.MemorySettings;
+import com.gitblit.utils.XssFilter;
+import com.gitblit.utils.XssFilter.AllowXssFilter;
 import com.unboundid.ldap.listener.InMemoryDirectoryServer;
 import com.unboundid.ldap.listener.InMemoryDirectoryServerConfig;
 import com.unboundid.ldap.listener.InMemoryListenerConfig;
@@ -68,6 +71,8 @@ public class LdapAuthenticationTest extends GitblitUnitTest {
 
 	private IUserManager userManager;
 
+	private AuthenticationManager auth;
+
 	private MemorySettings settings;
 
 	@BeforeClass
@@ -89,14 +94,24 @@ public class LdapAuthenticationTest extends GitblitUnitTest {
 		FileUtils.copyFile(new File(RESOURCE_DIR + "users.conf"), usersConf);
 		settings = getSettings();
 		ldap = newLdapAuthentication(settings);
+		auth = newAuthenticationManager(settings);
 	}
 
 	private LdapAuthProvider newLdapAuthentication(IStoredSettings settings) {
-		RuntimeManager runtime = new RuntimeManager(settings, GitBlitSuite.BASEFOLDER).start();
-		userManager = new UserManager(runtime).start();
+		XssFilter xssFilter = new AllowXssFilter();
+		RuntimeManager runtime = new RuntimeManager(settings, xssFilter, GitBlitSuite.BASEFOLDER).start();
+		userManager = new UserManager(runtime, null).start();
 		LdapAuthProvider ldap = new LdapAuthProvider();
 		ldap.setup(runtime, userManager);
 		return ldap;
+	}
+
+	private AuthenticationManager newAuthenticationManager(IStoredSettings settings) {
+		XssFilter xssFilter = new AllowXssFilter();
+		RuntimeManager runtime = new RuntimeManager(settings, xssFilter, GitBlitSuite.BASEFOLDER).start();
+		AuthenticationManager auth = new AuthenticationManager(runtime, userManager);
+		auth.addAuthenticationProvider(newLdapAuthentication(settings));
+		return auth;
 	}
 
 	private MemorySettings getSettings() {
@@ -221,6 +236,44 @@ public class LdapAuthenticationTest extends GitblitUnitTest {
 		ds.addEntries(LDIFReader.readEntries(RESOURCE_DIR + "addgroup.ldif"));
 		ldap.sync();
 		assertEquals("Number of ldap groups in gitblit team model", 1, countLdapTeamsInUserManager());
+	}
+
+	@Test
+	public void testAuthenticationManager() {
+		UserModel userOneModel = auth.authenticate("UserOne", "userOnePassword".toCharArray());
+		assertNotNull(userOneModel);
+		assertNotNull(userOneModel.getTeam("git_admins"));
+		assertNotNull(userOneModel.getTeam("git_users"));
+		assertTrue(userOneModel.canAdmin);
+
+		UserModel userOneModelFailedAuth = auth.authenticate("UserOne", "userTwoPassword".toCharArray());
+		assertNull(userOneModelFailedAuth);
+
+		UserModel userTwoModel = auth.authenticate("UserTwo", "userTwoPassword".toCharArray());
+		assertNotNull(userTwoModel);
+		assertNotNull(userTwoModel.getTeam("git_users"));
+		assertNull(userTwoModel.getTeam("git_admins"));
+		assertNotNull(userTwoModel.getTeam("git admins"));
+		assertTrue(userTwoModel.canAdmin);
+
+		UserModel userThreeModel = auth.authenticate("UserThree", "userThreePassword".toCharArray());
+		assertNotNull(userThreeModel);
+		assertNotNull(userThreeModel.getTeam("git_users"));
+		assertNull(userThreeModel.getTeam("git_admins"));
+		assertTrue(userThreeModel.canAdmin);
+	}
+
+	@Test
+	public void testBindWithUser() {
+		settings.put(Keys.realm.ldap.bindpattern, "CN=${username},OU=US,OU=Users,OU=UserControl,OU=MyOrganization,DC=MyDomain");
+		settings.put(Keys.realm.ldap.username, "");
+		settings.put(Keys.realm.ldap.password, "");
+
+		UserModel userOneModel = auth.authenticate("UserOne", "userOnePassword".toCharArray());
+		assertNotNull(userOneModel);
+
+		UserModel userOneModelFailedAuth = auth.authenticate("UserOne", "userTwoPassword".toCharArray());
+		assertNull(userOneModelFailedAuth);
 	}
 
 	private int countLdapUsersInUserManager() {

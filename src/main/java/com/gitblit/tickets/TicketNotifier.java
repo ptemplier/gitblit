@@ -204,7 +204,9 @@ public class TicketNotifier {
 			} catch (Exception e) {
 				Logger.getLogger(getClass()).error("failed to get changed paths", e);
 			} finally {
-				repo.close();
+				if (repo != null) {
+					repo.close();
+				}
 			}
 
 			String compareUrl = ticketService.getCompareUrl(ticket, base, patchset.tip);
@@ -489,6 +491,7 @@ public class TicketNotifier {
 		instructions = instructions.replace("${ticketRef}", ticketBranch);
 		instructions = instructions.replace("${patchsetRef}", patchsetBranch);
 		instructions = instructions.replace("${reviewBranch}", reviewBranch);
+		instructions = instructions.replace("${ticketBranch}", ticketBranch);
 
 		return instructions;
 	}
@@ -519,11 +522,18 @@ public class TicketNotifier {
 
 		//
 		// Direct TO recipients
+		// reporter & responsible
 		//
+		Set<String> tos = new TreeSet<String>();
+		tos.add(ticket.createdBy);
+		if (!StringUtils.isEmpty(ticket.responsible)) {
+			tos.add(ticket.responsible);
+		}
+
 		Set<String> toAddresses = new TreeSet<String>();
-		for (String name : ticket.getParticipants()) {
+		for (String name : tos) {
 			UserModel user = userManager.getUserModel(name);
-			if (user != null) {
+			if (user != null && !user.disabled) {
 				if (!StringUtils.isEmpty(user.emailAddress)) {
 					if (user.canView(repository)) {
 						toAddresses.add(user.emailAddress);
@@ -535,12 +545,16 @@ public class TicketNotifier {
 				}
 			}
 		}
-		mailing.setRecipients(toAddresses);
 
 		//
 		// CC recipients
 		//
 		Set<String> ccs = new TreeSet<String>();
+
+		// repository owners
+		if (!ArrayUtils.isEmpty(repository.owners)) {
+			ccs.addAll(repository.owners);
+		}
 
 		// cc users mentioned in last comment
 		Change lastChange = ticket.changes.get(ticket.changes.size() - 1);
@@ -561,7 +575,7 @@ public class TicketNotifier {
 		Set<String> ccAddresses = new TreeSet<String>();
 		for (String name : ccs) {
 			UserModel user = userManager.getUserModel(name);
-			if (user != null) {
+			if (user != null && !user.disabled) {
 				if (!StringUtils.isEmpty(user.emailAddress)) {
 					if (user.canView(repository)) {
 						ccAddresses.add(user.emailAddress);
@@ -580,6 +594,14 @@ public class TicketNotifier {
 		}
 		ccAddresses.addAll(settings.getStrings(Keys.mail.mailingLists));
 
+		// respect the author's email preference
+		UserModel lastAuthor = userManager.getUserModel(lastChange.author);
+		if (lastAuthor != null && !lastAuthor.getPreferences().isEmailMeOnMyTicketChanges()) {
+			toAddresses.remove(lastAuthor.emailAddress);
+			ccAddresses.remove(lastAuthor.emailAddress);
+		}
+
+		mailing.setRecipients(toAddresses);
 		mailing.setCCs(ccAddresses);
 	}
 

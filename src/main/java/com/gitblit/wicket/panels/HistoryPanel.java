@@ -38,8 +38,6 @@ import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.treewalk.TreeWalk;
 import org.eclipse.jgit.treewalk.filter.PathFilterGroup;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import com.gitblit.Constants;
 import com.gitblit.Keys;
@@ -63,8 +61,6 @@ public class HistoryPanel extends BasePanel {
 
 	private static final long serialVersionUID = 1L;
 
-	private final Logger log = LoggerFactory.getLogger(getClass());
-
 	private boolean hasMore;
 
 	public HistoryPanel(String wicketId, final String repositoryName, final String objectId,
@@ -78,20 +74,18 @@ public class HistoryPanel extends BasePanel {
 
 		RevCommit commit = JGitUtils.getCommit(r, objectId);
 		PathModel matchingPath = null;
-		List<PathChangeModel> paths;
 		Map<String, SubmoduleModel> submodules = new HashMap<String, SubmoduleModel>();
 
 		if (commit == null) {
 			// commit missing
 			String msg = MessageFormat.format("Failed to find history of **{0}** *{1}*",
 					path, objectId);
-			log.error(msg + " " + repositoryName);
-			paths = new ArrayList<PathChangeModel>();
+			logger().error(msg + " " + repositoryName);
 			add(new Label("commitHeader", MarkdownUtils.transformMarkdown(msg)).setEscapeModelStrings(false));
 			add(new Label("breadcrumbs"));
 		} else {
 			// commit found
-			paths = JGitUtils.getFilesInCommit(r, commit);
+			List<PathChangeModel> paths = JGitUtils.getFilesInCommit(r, commit);
 			add(new CommitHeaderPanel("commitHeader", repositoryName, commit));
 			add(new PathBreadcrumbsPanel("breadcrumbs", repositoryName, path, objectId));
 			for (SubmoduleModel model : JGitUtils.getSubmodules(r, commit.getTree())) {

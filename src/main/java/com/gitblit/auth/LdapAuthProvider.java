@@ -119,8 +119,12 @@ public class LdapAuthProvider extends UsernamePasswordAuthenticationProvider {
 						final Map<String, UserModel> ldapUsers = new HashMap<String, UserModel>();
 
 						for (SearchResultEntry loggingInUser : result.getSearchEntries()) {
-
-							final String username = loggingInUser.getAttribute(uidAttribute).getValue();
+							Attribute uid = loggingInUser.getAttribute(uidAttribute);
+							if (uid == null) {
+								logger.error("Can not synchronize with LDAP, missing \"{}\" attribute", uidAttribute);
+								continue;
+							}
+							final String username = uid.getValue();
 							logger.debug("LDAP synchronizing: " + username);
 
 							UserModel user = userManager.getUserModel(username);
@@ -294,6 +298,20 @@ public class LdapAuthProvider extends UsernamePasswordAuthenticationProvider {
 		LDAPConnection ldapConnection = getLdapConnection();
 		if (ldapConnection != null) {
 			try {
+				boolean alreadyAuthenticated = false;
+
+				String bindPattern = settings.getString(Keys.realm.ldap.bindpattern, "");
+				if (!StringUtils.isEmpty(bindPattern)) {
+					try {
+						String bindUser = StringUtils.replace(bindPattern, "${username}", escapeLDAPSearchFilter(simpleUsername));
+						ldapConnection.bind(bindUser, new String(password));
+
+						alreadyAuthenticated = true;
+					} catch (LDAPException e) {
+						return null;
+					}
+				}
+
 				// Find the logging in user's DN
 				String accountBase = settings.getString(Keys.realm.ldap.accountBase, "");
 				String accountPattern = settings.getString(Keys.realm.ldap.accountPattern, "(&(objectClass=person)(sAMAccountName=${username}))");
@@ -304,7 +322,7 @@ public class LdapAuthProvider extends UsernamePasswordAuthenticationProvider {
 					SearchResultEntry loggingInUser = result.getSearchEntries().get(0);
 					String loggingInUserDN = loggingInUser.getDN();
 
-					if (isAuthenticated(ldapConnection, loggingInUserDN, new String(password))) {
+					if (alreadyAuthenticated || isAuthenticated(ldapConnection, loggingInUserDN, new String(password))) {
 						logger.debug("LDAP authenticated: " + username);
 
 						UserModel user = null;
@@ -409,6 +427,10 @@ public class LdapAuthProvider extends UsernamePasswordAuthenticationProvider {
 				Attribute attribute = userEntry.getAttribute(email);
 				if (attribute != null && attribute.hasValue()) {
 					user.emailAddress = attribute.getValue();
+				} else {
+					// issue-456/ticket-134
+					// allow LDAP to delete an email address
+					user.emailAddress = null;
 				}
 			}
 		}

@@ -82,12 +82,23 @@
 		"title": "SparkleShare\u2122",
 		"description": "an open source collaboration and sharing tool",
 		"legal": "released under the GPLv3 open source license",
-		"cloneUrl": "sparkleshare://addProject/${baseUrl}/sparkleshare/${repoUrl}.xml",
+		"cloneUrl": "sparkleshare://addProject/${baseUrl}/sparkleshare/${username}@${repository}.xml",
 		"productUrl": "http://sparkleshare.org",
 		"transports": [ "ssh" ],
 		"platforms": [ "windows", "macintosh", "linux" ],
 		"icon": "sparkleshare_32x32.png",
 		"minimumPermission" : "RW+",
 		"isActive": false
+	},
+	{
+		"name": "TortoiseGit",
+		"title": "TortoiseGit",
+		"description": "Windows Shell Interface to Git",
+		"legal": "released under the GPLv2 open source license",
+		"cloneUrl": "tgit://clone/${repoUrl}",
+		"productUrl": "http://www.tortoisegit.org",
+		"platforms": [ "windows" ],
+		"icon": "tortoise32.png",
+		"isActive": true
 	}
 ]

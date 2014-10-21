@@ -71,6 +71,11 @@ public class NotificationManager implements INotificationManager {
 		return this;
 	}
 
+	@Override
+	public boolean isSendingMail() {
+		return mailService.isReady();
+	}
+
 	/**
 	 * Notify the administrators by email.
 	 *
@@ -112,6 +117,7 @@ public class NotificationManager implements INotificationManager {
 	@Override
 	public void sendHtmlMail(String subject, String message, Collection<String> toAddresses) {
 		Mailing mail = Mailing.newHtml();
+		mail.subject = subject;
 		mail.content = message;
 		mail.setRecipients(toAddresses);
 		send(mail);

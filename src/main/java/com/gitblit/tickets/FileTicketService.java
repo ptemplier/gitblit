@@ -22,6 +22,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -29,6 +31,7 @@ import org.eclipse.jgit.lib.Repository;
 
 import com.gitblit.Constants;
 import com.gitblit.manager.INotificationManager;
+import com.gitblit.manager.IPluginManager;
 import com.gitblit.manager.IRepositoryManager;
 import com.gitblit.manager.IRuntimeManager;
 import com.gitblit.manager.IUserManager;
@@ -58,11 +61,13 @@ public class FileTicketService extends ITicketService {
 
 	public FileTicketService(
 			IRuntimeManager runtimeManager,
+			IPluginManager pluginManager,
 			INotificationManager notificationManager,
 			IUserManager userManager,
 			IRepositoryManager repositoryManager) {
 
 		super(runtimeManager,
+				pluginManager,
 				notificationManager,
 				userManager,
 				repositoryManager);
@@ -143,6 +148,31 @@ public class FileTicketService extends ITicketService {
 		return hasTicket;
 	}
 
+	@Override
+	public synchronized Set<Long> getIds(RepositoryModel repository) {
+		Set<Long> ids = new TreeSet<Long>();
+		Repository db = repositoryManager.getRepository(repository.name);
+		try {
+			// identify current highest ticket id by scanning the paths in the tip tree
+			File dir = new File(db.getDirectory(), TICKETS_PATH);
+			dir.mkdirs();
+			List<File> journals = findAll(dir, JOURNAL);
+			for (File journal : journals) {
+				// Reconstruct ticketId from the path
+				// id/26/326/journal.json
+				String path = FileUtils.getRelativePath(dir, journal);
+				String tid = path.split("/")[1];
+				long ticketId = Long.parseLong(tid);
+				ids.add(ticketId);
+			}
+		} finally {
+			if (db != null) {
+				db.close();
+			}
+		}
+		return ids;
+	}
+
 	/**
 	 * Assigns a new ticket id.
 	 *
@@ -159,18 +189,10 @@ public class FileTicketService extends ITicketService {
 			}
 			AtomicLong lastId = lastAssignedId.get(repository.name);
 			if (lastId.get() <= 0) {
-				// identify current highest ticket id by scanning the paths in the tip tree
-				File dir = new File(db.getDirectory(), TICKETS_PATH);
-				dir.mkdirs();
-				List<File> journals = findAll(dir, JOURNAL);
-				for (File journal : journals) {
-					// Reconstruct ticketId from the path
-					// id/26/326/journal.json
-					String path = FileUtils.getRelativePath(dir, journal);
-					String tid = path.split("/")[1];
-					long ticketId = Long.parseLong(tid);
-					if (ticketId > lastId.get()) {
-						lastId.set(ticketId);
+				Set<Long> ids = getIds(repository);
+				for (long id : ids) {
+					if (id > lastId.get()) {
+						lastId.set(id);
 					}
 				}
 			}
@@ -264,11 +286,15 @@ public class FileTicketService extends ITicketService {
 
 	private List<File> findAll(File dir, String filename) {
 		List<File> list = new ArrayList<File>();
-		for (File file : dir.listFiles()) {
+		File [] files = dir.listFiles();
+		if (files == null) {
+			return list;
+		}
+		for (File file : files) {
 			if (file.isDirectory()) {
 				list.addAll(findAll(file, filename));
 			} else if (file.isFile()) {
-				if (file.getName().equals(filename)) {
+				if (file.getName().equalsIgnoreCase(filename)) {
 					list.add(file);
 				}
 			}
@@ -277,8 +303,7 @@ public class FileTicketService extends ITicketService {
 	}
 
 	/**
-	 * Retrieves the ticket from the repository by first looking-up the changeId
-	 * associated with the ticketId.
+	 * Retrieves the ticket from the repository.
 	 *
 	 * @param repository
 	 * @param ticketId
@@ -300,6 +325,28 @@ public class FileTicketService extends ITicketService {
 				ticket.number = ticketId;
 			}
 			return ticket;
+		} finally {
+			db.close();
+		}
+	}
+
+	/**
+	 * Retrieves the journal for the ticket.
+	 *
+	 * @param repository
+	 * @param ticketId
+	 * @return a journal, if it exists, otherwise null
+	 */
+	@Override
+	protected List<Change> getJournalImpl(RepositoryModel repository, long ticketId) {
+		Repository db = repositoryManager.getRepository(repository.name);
+		try {
+			List<Change> changes = getJournal(db, ticketId);
+			if (ArrayUtils.isEmpty(changes)) {
+				log.warn("Empty journal for {}:{}", repository, ticketId);
+				return null;
+			}
+			return changes;
 		} finally {
 			db.close();
 		}

@@ -51,6 +51,7 @@ import org.slf4j.LoggerFactory;
 
 import com.gitblit.Constants;
 import com.gitblit.Keys;
+import com.gitblit.extensions.PatchsetHook;
 import com.gitblit.manager.IGitblit;
 import com.gitblit.models.RepositoryModel;
 import com.gitblit.models.TicketModel;
@@ -72,6 +73,7 @@ import com.gitblit.utils.JGitUtils.MergeResult;
 import com.gitblit.utils.JGitUtils.MergeStatus;
 import com.gitblit.utils.RefLogUtils;
 import com.gitblit.utils.StringUtils;
+import com.google.common.collect.Lists;
 
 
 /**
@@ -149,6 +151,11 @@ public class PatchsetReceivePack extends GitblitReceivePack {
 			LOGGER.error("failed to determine default branch for " + repository.name, e);
 		}
 
+		if (!StringUtils.isEmpty(getRepositoryModel().mergeTo)) {
+			// repository settings specifies a default integration branch
+			defaultBranch = Repository.shortenRefName(getRepositoryModel().mergeTo);
+		}
+
 		long ticketId = 0L;
 		try {
 			ticketId = Long.parseLong(branch);
@@ -163,11 +170,11 @@ public class PatchsetReceivePack extends GitblitReceivePack {
 
 	/** Extracts the ticket id from the ref name */
 	private long getTicketId(String refName) {
+		if (refName.indexOf('%') > -1) {
+			refName = refName.substring(0, refName.indexOf('%'));
+		}
 		if (refName.startsWith(Constants.R_FOR)) {
 			String ref = refName.substring(Constants.R_FOR.length());
-			if (ref.indexOf('%') > -1) {
-				ref = ref.substring(0, ref.indexOf('%'));
-			}
 			try {
 				return Long.parseLong(ref);
 			} catch (Exception e) {
@@ -308,6 +315,7 @@ public class PatchsetReceivePack extends GitblitReceivePack {
 			}
 
 			if (isPatchsetRef(cmd.getRefName()) && processPatchsets) {
+
 				if (ticketService == null) {
 					sendRejection(cmd, "Sorry, the ticket service is unavailable and can not accept patchsets at this time.");
 					continue;
@@ -345,10 +353,27 @@ public class PatchsetReceivePack extends GitblitReceivePack {
 					continue;
 				}
 
+				if (cmd.getNewId().equals(ObjectId.zeroId())) {
+					// ref deletion request
+					if (cmd.getRefName().startsWith(Constants.R_TICKET)) {
+						if (user.canDeleteRef(repository)) {
+							batch.addCommand(cmd);
+						} else {
+							sendRejection(cmd, "Sorry, you do not have permission to delete {}", cmd.getRefName());
+						}
+					} else {
+						sendRejection(cmd, "Sorry, you can not delete {}", cmd.getRefName());
+					}
+					continue;
+				}
+
 				if (patchsetRefCmd != null) {
 					sendRejection(cmd, "You may only push one patchset at a time.");
 					continue;
 				}
+
+				LOGGER.info(MessageFormat.format("Verifying {0} push ref \"{1}\" received from {2}",
+						repository.name, cmd.getRefName(), user.username));
 
 				// responsible verification
 				String responsible = PatchsetCommand.getSingleOption(cmd, PatchsetCommand.RESPONSIBLE);
@@ -380,13 +405,18 @@ public class PatchsetReceivePack extends GitblitReceivePack {
 				// watcher verification
 				List<String> watchers = PatchsetCommand.getOptions(cmd, PatchsetCommand.WATCH);
 				if (!ArrayUtils.isEmpty(watchers)) {
+					boolean verified = true;
 					for (String watcher : watchers) {
 						UserModel user = gitblit.getUserModel(watcher);
 						if (user == null) {
 							// watcher does not exist
 							sendRejection(cmd, "Sorry, \"{0}\" is not a valid username for the watch list!", watcher);
-							continue;
+							verified = false;
+							break;
 						}
+					}
+					if (!verified) {
+						continue;
 					}
 				}
 
@@ -429,7 +459,10 @@ public class PatchsetReceivePack extends GitblitReceivePack {
 				patchsetRefCmd.setResult(Result.OK);
 
 				// update the ticket branch ref
-				RefUpdate ru = updateRef(patchsetCmd.getTicketBranch(), patchsetCmd.getNewId());
+				RefUpdate ru = updateRef(
+						patchsetCmd.getTicketBranch(),
+						patchsetCmd.getNewId(),
+						patchsetCmd.getPatchsetType());
 				updateReflog(ru);
 
 				TicketModel ticket = processPatchset(patchsetCmd);
@@ -509,8 +542,10 @@ public class PatchsetReceivePack extends GitblitReceivePack {
 						break;
 					}
 				}
-				sendError("Sorry, {0} already merged {1} from ticket {2,number,0} to {3}!",
+				if (mergeChange != null) {
+					sendError("Sorry, {0} already merged {1} from ticket {2,number,0} to {3}!",
 						mergeChange.author, mergeChange.patchset, number, ticket.mergeTo);
+				}
 				sendRejection(cmd, "Ticket {0,number,0} already resolved", number);
 				return null;
 			} else if (!StringUtils.isEmpty(ticket.mergeTo)) {
@@ -592,14 +627,102 @@ public class PatchsetReceivePack extends GitblitReceivePack {
 
 			if (patchset.commits > 1) {
 				sendError("");
-				sendError("To create a proposal ticket, please squash your commits and");
-				sendError("provide a meaningful commit message with a short title &");
-				sendError("an optional description/body.");
+				sendError("You may not create a ''{0}'' branch proposal ticket from {1} commits!",
+						forBranch, patchset.commits);
 				sendError("");
-				sendError(minTitle);
-				sendError(maxTitle);
+				// display an ellipsized log of the commits being pushed
+				RevWalk walk = getRevWalk();
+				walk.reset();
+				walk.sort(RevSort.TOPO);
+				int boundary = 3;
+				int count = 0;
+				try {
+					walk.markStart(tipCommit);
+					walk.markUninteresting(mergeBase);
+
+					for (;;) {
+
+						RevCommit c = walk.next();
+						if (c == null) {
+							break;
+						}
+
+						if (count < boundary || count >= (patchset.commits - boundary)) {
+
+							walk.parseBody(c);
+							sendError("   {0}  {1}", c.getName().substring(0, shortCommitIdLen),
+								StringUtils.trimString(c.getShortMessage(), 60));
+
+						} else if (count == boundary) {
+
+							sendError("   ... more commits ...");
+
+						}
+
+						count++;
+					}
+
+				} catch (IOException e) {
+					// Should never happen, the core receive process would have
+					// identified the missing object earlier before we got control.
+					LOGGER.error("failed to get commit count", e);
+				} finally {
+					walk.release();
+				}
+
 				sendError("");
-				sendRejection(cmd, "please squash to one commit");
+				sendError("Possible Solutions:");
+				sendError("");
+				int solution = 1;
+				String forSpec = cmd.getRefName().substring(Constants.R_FOR.length());
+				if (forSpec.equals("default") || forSpec.equals("new")) {
+					try {
+						// determine other possible integration targets
+						List<String> bases = Lists.newArrayList();
+						for (Ref ref : getRepository().getRefDatabase().getRefs(Constants.R_HEADS).values()) {
+							if (!ref.getName().startsWith(Constants.R_TICKET)
+									&& !ref.getName().equals(forBranchRef.getName())) {
+								if (JGitUtils.isMergedInto(getRepository(), ref.getObjectId(), tipCommit)) {
+									bases.add(Repository.shortenRefName(ref.getName()));
+								}
+							}
+						}
+
+						if (!bases.isEmpty()) {
+
+							if (bases.size() == 1) {
+								// suggest possible integration targets
+								String base = bases.get(0);
+								sendError("{0}. Propose this change for the ''{1}'' branch.", solution++, base);
+								sendError("");
+								sendError("   git push origin HEAD:refs/for/{0}", base);
+								sendError("   pt propose {0}", base);
+								sendError("");
+							} else {
+								// suggest possible integration targets
+								sendError("{0}. Propose this change for a different branch.", solution++);
+								sendError("");
+								for (String base : bases) {
+									sendError("   git push origin HEAD:refs/for/{0}", base);
+									sendError("   pt propose {0}", base);
+									sendError("");
+								}
+							}
+
+						}
+					} catch (IOException e) {
+						LOGGER.error(null, e);
+					}
+				}
+				sendError("{0}. Squash your changes into a single commit with a meaningful message.", solution++);
+				sendError("");
+				sendError("{0}. Open a ticket for your changes and then push your {1} commits to the ticket.",
+						solution++, patchset.commits);
+				sendError("");
+				sendError("   git push origin HEAD:refs/for/{id}");
+				sendError("   pt propose {id}");
+				sendError("");
+				sendRejection(cmd, "too many commits");
 				return null;
 			}
 
@@ -664,8 +787,7 @@ public class PatchsetReceivePack extends GitblitReceivePack {
 				sendError("  1. you created the ticket");
 				sendError("  2. you created the first patchset");
 				sendError("  3. you are specified as responsible for the ticket");
-				sendError("  4. you are listed as a reviewer for the ticket");
-				sendError("  5. you have push (RW) permission to {0}", repository.name);
+				sendError("  4. you have push (RW) permissions to {0}", repository.name);
 				sendError("");
 				sendRejection(cmd, "not permitted to push to ticket {0,number,0}", ticket.number);
 				return null;
@@ -706,6 +828,15 @@ public class PatchsetReceivePack extends GitblitReceivePack {
 				RefLogUtils.updateRefLog(user, getRepository(),
 						Arrays.asList(new ReceiveCommand(cmd.getOldId(), cmd.getNewId(), cmd.getRefName())));
 
+				// call any patchset hooks
+				for (PatchsetHook hook : gitblit.getExtensions(PatchsetHook.class)) {
+					try {
+						hook.onNewPatchset(ticket);
+					} catch (Exception e) {
+						LOGGER.error("Failed to execute extension", e);
+					}
+				}
+
 				return ticket;
 			} else {
 				sendError("FAILED to create ticket");
@@ -732,6 +863,20 @@ public class PatchsetReceivePack extends GitblitReceivePack {
 				// log the new patchset ref
 				RefLogUtils.updateRefLog(user, getRepository(),
 					Arrays.asList(new ReceiveCommand(cmd.getOldId(), cmd.getNewId(), cmd.getRefName())));
+
+				// call any patchset hooks
+				final boolean isNewPatchset = change.patchset.rev == 1;
+				for (PatchsetHook hook : gitblit.getExtensions(PatchsetHook.class)) {
+					try {
+						if (isNewPatchset) {
+							hook.onNewPatchset(ticket);
+						} else {
+							hook.onUpdatePatchset(ticket);
+						}
+					} catch (Exception e) {
+						LOGGER.error("Failed to execute extension", e);
+					}
+				}
 
 				// return the updated ticket
 				return ticket;
@@ -768,6 +913,9 @@ public class PatchsetReceivePack extends GitblitReceivePack {
 				}
 
 				TicketModel ticket = ticketService.getTicket(repository, ticketNumber);
+				if (ticket == null) {
+					continue;
+				}
 				String integrationBranch;
 				if (StringUtils.isEmpty(ticket.mergeTo)) {
 					// unspecified integration branch
@@ -825,8 +973,8 @@ public class PatchsetReceivePack extends GitblitReceivePack {
 					psCmd.updateTicket(c, mergeTo, ticket, null);
 
 					// create a ticket patchset ref
-					updateRef(psCmd.getPatchsetBranch(), c.getId());
-					RefUpdate ru = updateRef(psCmd.getTicketBranch(), c.getId());
+					updateRef(psCmd.getPatchsetBranch(), c.getId(), patchset.type);
+					RefUpdate ru = updateRef(psCmd.getTicketBranch(), c.getId(), patchset.type);
 					updateReflog(ru);
 
 					// create a change from the patchset command
@@ -887,11 +1035,20 @@ public class PatchsetReceivePack extends GitblitReceivePack {
 
 		if (parseMessage) {
 			// parse commit message looking for fixes/closes #n
-			Pattern p = Pattern.compile("(?:fixes|closes)[\\s-]+#?(\\d+)", Pattern.CASE_INSENSITIVE);
-			Matcher m = p.matcher(commit.getFullMessage());
-			while (m.find()) {
-				String val = m.group();
-				return Long.parseLong(val);
+			String dx = "(?:fixes|closes)[\\s-]+#?(\\d+)";
+			String x = settings.getString(Keys.tickets.closeOnPushCommitMessageRegex, dx);
+			if (StringUtils.isEmpty(x)) {
+				x = dx;
+			}
+			try {
+				Pattern p = Pattern.compile(x, Pattern.CASE_INSENSITIVE);
+				Matcher m = p.matcher(commit.getFullMessage());
+				while (m.find()) {
+					String val = m.group(1);
+					return Long.parseLong(val);
+				}
+			} catch (Exception e) {
+				LOGGER.error(String.format("Failed to parse \"%s\" in commit %s", x, commit.getName()), e);
 			}
 		}
 		return 0L;
@@ -1033,7 +1190,7 @@ public class PatchsetReceivePack extends GitblitReceivePack {
 		return newPatchset;
 	}
 
-	private RefUpdate updateRef(String ref, ObjectId newId) {
+	private RefUpdate updateRef(String ref, ObjectId newId, PatchsetType type) {
 		ObjectId ticketRefId = ObjectId.zeroId();
 		try {
 			ticketRefId = getRepository().resolve(ref);
@@ -1044,7 +1201,17 @@ public class PatchsetReceivePack extends GitblitReceivePack {
 		try {
 			RefUpdate ru = getRepository().updateRef(ref,  false);
 			ru.setRefLogIdent(getRefLogIdent());
-			ru.setForceUpdate(true);
+			switch (type) {
+			case Amend:
+			case Rebase:
+			case Rebase_Squash:
+			case Squash:
+				ru.setForceUpdate(true);
+				break;
+			default:
+				break;
+			}
+
 			ru.setExpectedOldObjectId(ticketRefId);
 			ru.setNewObjectId(newId);
 			RefUpdate.Result result = ru.update(getRevWalk());
@@ -1129,11 +1296,24 @@ public class PatchsetReceivePack extends GitblitReceivePack {
 		if (ticket != null) {
 			ticketNotifier.queueMailing(ticket);
 
-			// update the reflog with the merge
 			if (oldRef != null) {
 				ReceiveCommand cmd = new ReceiveCommand(oldRef.getObjectId(),
 						ObjectId.fromString(mergeResult.sha), oldRef.getName());
-				RefLogUtils.updateRefLog(user, getRepository(), Arrays.asList(cmd));
+				cmd.setResult(Result.OK);
+				List<ReceiveCommand> commands = Arrays.asList(cmd);
+
+				logRefChange(commands);
+				updateIncrementalPushTags(commands);
+				updateGitblitRefLog(commands);
+			}
+
+			// call patchset hooks
+			for (PatchsetHook hook : gitblit.getExtensions(PatchsetHook.class)) {
+				try {
+					hook.onMergePatchset(ticket);
+				} catch (Exception e) {
+					LOGGER.error("Failed to execute extension", e);
+				}
 			}
 			return mergeResult.status;
 		} else {

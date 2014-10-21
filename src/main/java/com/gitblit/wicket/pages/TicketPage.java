@@ -37,7 +37,6 @@ import org.apache.wicket.MarkupContainer;
 import org.apache.wicket.PageParameters;
 import org.apache.wicket.RestartResponseException;
 import org.apache.wicket.ajax.AjaxRequestTarget;
-import org.apache.wicket.behavior.IBehavior;
 import org.apache.wicket.behavior.SimpleAttributeModifier;
 import org.apache.wicket.markup.html.basic.Label;
 import org.apache.wicket.markup.html.image.ContextImage;
@@ -54,16 +53,17 @@ import org.eclipse.jgit.lib.PersonIdent;
 import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.RevCommit;
-import org.eclipse.jgit.transport.URIish;
 
 import com.gitblit.Constants;
 import com.gitblit.Constants.AccessPermission;
+import com.gitblit.Constants.AuthorizationControl;
 import com.gitblit.Keys;
 import com.gitblit.git.PatchsetCommand;
 import com.gitblit.git.PatchsetReceivePack;
 import com.gitblit.models.PathModel.PathChangeModel;
 import com.gitblit.models.RegistrantAccessPermission;
 import com.gitblit.models.RepositoryModel;
+import com.gitblit.models.RepositoryUrl;
 import com.gitblit.models.SubmoduleModel;
 import com.gitblit.models.TicketModel;
 import com.gitblit.models.TicketModel.Change;
@@ -79,12 +79,14 @@ import com.gitblit.tickets.TicketIndexer.Lucene;
 import com.gitblit.tickets.TicketLabel;
 import com.gitblit.tickets.TicketMilestone;
 import com.gitblit.tickets.TicketResponsible;
+import com.gitblit.utils.ArrayUtils;
 import com.gitblit.utils.JGitUtils;
 import com.gitblit.utils.JGitUtils.MergeStatus;
 import com.gitblit.utils.MarkdownUtils;
 import com.gitblit.utils.StringUtils;
 import com.gitblit.utils.TimeUtils;
 import com.gitblit.wicket.GitBlitWebSession;
+import com.gitblit.wicket.TicketsUI;
 import com.gitblit.wicket.WicketUtils;
 import com.gitblit.wicket.panels.BasePanel.JavascriptTextPrompt;
 import com.gitblit.wicket.panels.CommentPanel;
@@ -101,7 +103,7 @@ import com.gitblit.wicket.panels.SimpleAjaxLink;
  * @author James Moger
  *
  */
-public class TicketPage extends TicketBasePage {
+public class TicketPage extends RepositoryPage {
 
 	static final String NIL = "<nil>";
 
@@ -153,7 +155,7 @@ public class TicketPage extends TicketBasePage {
 		String href = urlFor(TicketsPage.class, params).toString();
 		add(new ExternalLink("ticketNumber", href, "#" + ticket.number));
 		Label headerStatus = new Label("headerStatus", ticket.status.toString());
-		WicketUtils.setCssClass(headerStatus, getLozengeClass(ticket.status, false));
+		WicketUtils.setCssClass(headerStatus, TicketsUI.getLozengeClass(ticket.status, false));
 		add(headerStatus);
 		add(new Label("ticketTitle", ticket.title));
 		if (currentPatchset == null) {
@@ -246,17 +248,24 @@ public class TicketPage extends TicketBasePage {
 			add(new Label("milestone"));
 		} else {
 			// link to milestone query
-			TicketMilestone milestone = app().tickets().getMilestone(repository, ticket.milestone);
-			PageParameters milestoneParameters = new PageParameters();
-			milestoneParameters.put("r", repositoryName);
+			TicketMilestone tm = app().tickets().getMilestone(repository, ticket.milestone);
+			if (tm == null) {
+				tm = new TicketMilestone(ticket.milestone);
+			}
+			PageParameters milestoneParameters;
+			if (tm.isOpen()) {
+				milestoneParameters = WicketUtils.newOpenTicketsParameter(repositoryName);
+			} else {
+				milestoneParameters = WicketUtils.newRepositoryParameter(repositoryName);
+			}
 			milestoneParameters.put(Lucene.milestone.name(), ticket.milestone);
 			int progress = 0;
 			int open = 0;
 			int closed = 0;
-			if (milestone != null) {
-				progress = milestone.getProgress();
-				open = milestone.getOpenTickets();
-				closed = milestone.getClosedTickets();
+			if (tm != null) {
+				progress = tm.getProgress();
+				open = tm.getOpenTickets();
+				closed = tm.getClosedTickets();
 			}
 
 			Fragment milestoneProgress = new Fragment("milestone", "milestoneProgressFragment", this);
@@ -276,7 +285,10 @@ public class TicketPage extends TicketBasePage {
 		if (StringUtils.isEmpty(ticket.body)) {
 			desc = getString("gb.noDescriptionGiven");
 		} else {
-			desc = MarkdownUtils.transformGFM(app().settings(), ticket.body, ticket.repository);
+			String bugtraq = bugtraqProcessor().processText(getRepository(), repositoryName, ticket.body);
+			String html = MarkdownUtils.transformGFM(app().settings(), bugtraq, ticket.repository);
+			String safeHtml = app().xssFilter().relaxed(html);
+			desc = safeHtml;
 		}
 		add(new Label("ticketDescription", desc).setEscapeModelStrings(false));
 
@@ -316,10 +328,10 @@ public class TicketPage extends TicketBasePage {
 		 * LARGE STATUS INDICATOR WITH ICON (DISCUSSION TAB->SIDE BAR)
 		 */
 		Fragment ticketStatus = new Fragment("ticketStatus", "ticketStatusFragment", this);
-		Label ticketIcon = getStateIcon("ticketIcon", ticket);
+		Label ticketIcon = TicketsUI.getStateIcon("ticketIcon", ticket);
 		ticketStatus.add(ticketIcon);
 		ticketStatus.add(new Label("ticketStatus", ticket.status.toString()));
-		WicketUtils.setCssClass(ticketStatus, getLozengeClass(ticket.status, false));
+		WicketUtils.setCssClass(ticketStatus, TicketsUI.getLozengeClass(ticket.status, false));
 		add(ticketStatus);
 
 
@@ -327,7 +339,7 @@ public class TicketPage extends TicketBasePage {
 		 * UPDATE FORM (DISCUSSION TAB)
 		 */
 		if (user.canEdit(ticket, repository) && app().tickets().isAcceptingTicketUpdates(repository)) {
-			if (ticket.isOpen()) {
+			if (user.canAdmin(ticket, repository) && ticket.isOpen()) {
 				/*
 				 * OPEN TICKET
 				 */
@@ -369,7 +381,7 @@ public class TicketPage extends TicketBasePage {
 								setResponsePage(TicketsPage.class, getPageParameters());
 							}
 						};
-						String css = getStatusClass(item.getModel().getObject());
+						String css = TicketsUI.getStatusClass(item.getModel().getObject());
 						WicketUtils.setCssClass(link, css);
 						item.add(link);
 					}
@@ -380,9 +392,16 @@ public class TicketPage extends TicketBasePage {
 				 * RESPONSIBLE LIST
 				 */
 				Set<String> userlist = new TreeSet<String>(ticket.getParticipants());
-				for (RegistrantAccessPermission rp : app().repositories().getUserAccessPermissions(getRepositoryModel())) {
-					if (rp.permission.atLeast(AccessPermission.PUSH) && !rp.isTeam()) {
-						userlist.add(rp.registrant);
+				if (UserModel.ANONYMOUS.canPush(getRepositoryModel())
+						|| AuthorizationControl.AUTHENTICATED == getRepositoryModel().authorizationControl) {
+					// 	authorization is ANONYMOUS or AUTHENTICATED (i.e. all users can be set responsible)
+					userlist.addAll(app().users().getAllUsernames());
+				} else {
+					// authorization is by NAMED users (users with PUSH permission can be set responsible)
+					for (RegistrantAccessPermission rp : app().repositories().getUserAccessPermissions(getRepositoryModel())) {
+						if (rp.permission.atLeast(AccessPermission.PUSH)) {
+							userlist.add(rp.registrant);
+						}
 					}
 				}
 				List<TicketResponsible> responsibles = new ArrayList<TicketResponsible>();
@@ -504,8 +523,9 @@ public class TicketPage extends TicketBasePage {
 			add(new Label("ticketTopic").setVisible(false));
 		} else {
 			// process the topic using the bugtraq config to link things
-			String topic = bugtraqProcessor().processPlainCommitMessage(getRepository(), repositoryName, ticket.topic);
-			add(new Label("ticketTopic", topic).setEscapeModelStrings(false));
+			String topic = bugtraqProcessor().processText(getRepository(), repositoryName, ticket.topic);
+			String safeTopic = app().xssFilter().relaxed(topic);
+			add(new Label("ticketTopic", safeTopic).setEscapeModelStrings(false));
 		}
 
 
@@ -520,7 +540,7 @@ public class TicketPage extends TicketBasePage {
 			WicketUtils.setCssClass(votersCount, "badge badge-info");
 		}
 		add(votersCount);
-		if (user.isAuthenticated) {
+		if (user.isAuthenticated && app().tickets().isAcceptingTicketUpdates(repository)) {
 			Model<String> model;
 			if (ticket.isVoter(user.username)) {
 				model = Model.of(getString("gb.removeVote"));
@@ -560,7 +580,7 @@ public class TicketPage extends TicketBasePage {
 			WicketUtils.setCssClass(watchersCount, "badge badge-info");
 		}
 		add(watchersCount);
-		if (user.isAuthenticated) {
+		if (user.isAuthenticated && app().tickets().isAcceptingTicketUpdates(repository)) {
 			Model<String> model;
 			if (ticket.isWatching(user.username)) {
 				model = Model.of(getString("gb.stopWatching"));
@@ -664,17 +684,8 @@ public class TicketPage extends TicketBasePage {
 						 */
 						Fragment frag = new Fragment("entry", "statusFragment", this);
 						Label status = new Label("statusChange", entry.getStatus().toString());
-						String css = getLozengeClass(entry.getStatus(), false);
+						String css = TicketsUI.getLozengeClass(entry.getStatus(), false);
 						WicketUtils.setCssClass(status, css);
-						for (IBehavior b : status.getBehaviors()) {
-							if (b instanceof SimpleAttributeModifier) {
-								SimpleAttributeModifier sam = (SimpleAttributeModifier) b;
-								if ("class".equals(sam.getAttribute())) {
-									status.add(new SimpleAttributeModifier("class", "status-change " + sam.getValue()));
-									break;
-								}
-							}
-						}
 						frag.add(status);
 						addUserAttributions(frag, entry, avatarWidth);
 						addDateAttributions(frag, entry);
@@ -683,7 +694,9 @@ public class TicketPage extends TicketBasePage {
 						/*
 						 * COMMENT
 						 */
-						String comment = MarkdownUtils.transformGFM(app().settings(), entry.comment.text, repositoryName);
+						String bugtraq = bugtraqProcessor().processText(getRepository(), repositoryName, entry.comment.text);
+						String comment = MarkdownUtils.transformGFM(app().settings(), bugtraq, repositoryName);
+						String safeComment = app().xssFilter().relaxed(comment);
 						Fragment frag = new Fragment("entry", "commentFragment", this);
 						Label commentIcon = new Label("commentIcon");
 						if (entry.comment.src == CommentSource.Email) {
@@ -692,7 +705,7 @@ public class TicketPage extends TicketBasePage {
 							WicketUtils.setCssClass(commentIcon, "iconic-comment-alt2-stroke");
 						}
 						frag.add(commentIcon);
-						frag.add(new Label("comment", comment).setEscapeModelStrings(false));
+						frag.add(new Label("comment", safeComment).setEscapeModelStrings(false));
 						addUserAttributions(frag, entry, avatarWidth);
 						addDateAttributions(frag, entry);
 						item.add(frag);
@@ -731,26 +744,61 @@ public class TicketPage extends TicketBasePage {
 		 *  PATCHSET TAB
 		 */
 		if (currentPatchset == null) {
-			// no patchset yet, show propose fragment
-			String repoUrl = getRepositoryUrl(user, repository);
-			Fragment changeIdFrag = new Fragment("patchset", "proposeFragment", this);
-			changeIdFrag.add(new Label("proposeInstructions", MarkdownUtils.transformMarkdown(getString("gb.proposeInstructions"))).setEscapeModelStrings(false));
-			changeIdFrag.add(new Label("ptWorkflow", MessageFormat.format(getString("gb.proposeWith"), "Barnum")));
-			changeIdFrag.add(new Label("ptWorkflowSteps", getProposeWorkflow("propose_pt.md", repoUrl, ticket.number)).setEscapeModelStrings(false));
-			changeIdFrag.add(new Label("gitWorkflow", MessageFormat.format(getString("gb.proposeWith"), "Git")));
-			changeIdFrag.add(new Label("gitWorkflowSteps", getProposeWorkflow("propose_git.md", repoUrl, ticket.number)).setEscapeModelStrings(false));
-			add(changeIdFrag);
+			// no patchset available
+			RepositoryUrl repoUrl = getRepositoryUrl(user, repository);
+			boolean canPropose = repoUrl != null && repoUrl.permission.atLeast(AccessPermission.CLONE) && !UserModel.ANONYMOUS.equals(user);
+			if (ticket.isOpen() && app().tickets().isAcceptingNewPatchsets(repository) && canPropose) {
+				// ticket & repo will accept a proposal patchset
+				// show the instructions for proposing a patchset
+				Fragment changeIdFrag = new Fragment("patchset", "proposeFragment", this);
+				changeIdFrag.add(new Label("proposeInstructions", MarkdownUtils.transformMarkdown(getString("gb.proposeInstructions"))).setEscapeModelStrings(false));
+				changeIdFrag.add(new Label("ptWorkflow", MessageFormat.format(getString("gb.proposeWith"), "Barnum")));
+				changeIdFrag.add(new Label("ptWorkflowSteps", getProposeWorkflow("propose_pt.md", repoUrl.url, ticket.number)).setEscapeModelStrings(false));
+				changeIdFrag.add(new Label("gitWorkflow", MessageFormat.format(getString("gb.proposeWith"), "Git")));
+				changeIdFrag.add(new Label("gitWorkflowSteps", getProposeWorkflow("propose_git.md", repoUrl.url, ticket.number)).setEscapeModelStrings(false));
+				add(changeIdFrag);
+			} else {
+				// explain why you can't propose a patchset
+				Fragment fragment = new Fragment("patchset", "canNotProposeFragment", this);
+				String reason = "";
+				if (ticket.isClosed()) {
+					reason = getString("gb.ticketIsClosed");
+				} else if (repository.isMirror) {
+					reason = getString("gb.repositoryIsMirror");
+				} else if (repository.isFrozen) {
+					reason = getString("gb.repositoryIsFrozen");
+				} else if (!repository.acceptNewPatchsets) {
+					reason = getString("gb.repositoryDoesNotAcceptPatchsets");
+				} else if (!canPropose) {
+					if (UserModel.ANONYMOUS.equals(user)) {
+						reason = getString("gb.anonymousCanNotPropose");
+					} else {
+						reason = getString("gb.youDoNotHaveClonePermission");
+					}
+				} else {
+					reason = getString("gb.serverDoesNotAcceptPatchsets");
+				}
+				fragment.add(new Label("reason", reason));
+				add(fragment);
+			}
 		} else {
 			// show current patchset
 			Fragment patchsetFrag = new Fragment("patchset", "patchsetFragment", this);
 			patchsetFrag.add(new Label("commitsInPatchset", MessageFormat.format(getString("gb.commitsInPatchsetN"), currentPatchset.number)));
 
-			// current revision
-			MarkupContainer panel = createPatchsetPanel("panel", repository, user);
-			patchsetFrag.add(panel);
-			addUserAttributions(patchsetFrag, currentRevision, avatarWidth);
-			addUserAttributions(panel, currentRevision, 0);
-			addDateAttributions(panel, currentRevision);
+			patchsetFrag.add(createMergePanel(user, repository));
+
+			if (ticket.isOpen()) {
+				// current revision
+				MarkupContainer panel = createPatchsetPanel("panel", repository, user);
+				patchsetFrag.add(panel);
+				addUserAttributions(patchsetFrag, currentRevision, avatarWidth);
+				addUserAttributions(panel, currentRevision, 0);
+				addDateAttributions(panel, currentRevision);
+			} else {
+				// current revision
+				patchsetFrag.add(new Label("panel").setVisible(false));
+			}
 
 			// commits
 			List<RevCommit> commits = JGitUtils.getRevLog(getRepository(), currentPatchset.base, currentPatchset.tip);
@@ -900,7 +948,7 @@ public class TicketPage extends TicketBasePage {
 							case status:
 								// special handling for status
 								Status status = event.getStatus();
-								String css = getLozengeClass(status, true);
+								String css = TicketsUI.getLozengeClass(status, true);
 								value = String.format("<span class=\"%1$s\">%2$s</span>", css, status.toString());
 								break;
 							default:
@@ -918,7 +966,8 @@ public class TicketPage extends TicketBasePage {
 						sb.append("</td></tr>");
 					}
 					sb.append("</tbody></table>");
-					item.add(new Label("fields", sb.toString()).setEscapeModelStrings(false));
+					String safeHtml = app().xssFilter().relaxed(sb.toString());
+					item.add(new Label("fields", safeHtml).setEscapeModelStrings(false));
 				} else {
 					item.add(new Label("fields").setVisible(false));
 				}
@@ -967,7 +1016,11 @@ public class TicketPage extends TicketBasePage {
 		md = md.replace("${ticketId}", "" + ticketId);
 		md = md.replace("${patchset}", "" + 1);
 		md = md.replace("${reviewBranch}", Repository.shortenRefName(PatchsetCommand.getTicketBranch(ticketId)));
-		md = md.replace("${integrationBranch}", Repository.shortenRefName(getRepositoryModel().HEAD));
+		String integrationBranch = Repository.shortenRefName(getRepositoryModel().mergeTo);
+		if (!StringUtils.isEmpty(ticket.mergeTo)) {
+			integrationBranch = ticket.mergeTo;
+		}
+		md = md.replace("${integrationBranch}", integrationBranch);
 		return MarkdownUtils.transformMarkdown(md);
 	}
 
@@ -1044,7 +1097,7 @@ public class TicketPage extends TicketBasePage {
 		panel.add(reviewsView);
 
 
-		if (ticket.isOpen() && user.canReviewPatchset(repository)) {
+		if (ticket.isOpen() && user.canReviewPatchset(repository) && app().tickets().isAcceptingTicketUpdates(repository)) {
 			// can only review open tickets
 			Review myReview = null;
 			for (Change change : ticket.getReviews(currentPatchset)) {
@@ -1108,7 +1161,6 @@ public class TicketPage extends TicketBasePage {
 				WicketUtils.setChangeTypeCssClass(changeType, entry.changeType);
 				setChangeTypeTooltip(changeType, entry.changeType);
 				item.add(changeType);
-				item.add(new DiffStatPanel("diffStat", entry.insertions, entry.deletions, true));
 
 				boolean hasSubmodule = false;
 				String submodulePath = null;
@@ -1134,7 +1186,7 @@ public class TicketPage extends TicketBasePage {
 					String displayPath = entry.path;
 					String path = entry.path;
 					if (entry.isSymlink()) {
-						RevCommit commit = JGitUtils.getCommit(getRepository(), Constants.R_TICKETS_PATCHSETS + ticket.number);
+						RevCommit commit = JGitUtils.getCommit(getRepository(), PatchsetCommand.getTicketBranch(ticket.number));
 						path = JGitUtils.getStringContent(getRepository(), commit.getTree(), path);
 						displayPath = entry.path + " -> " + path;
 					}
@@ -1151,6 +1203,7 @@ public class TicketPage extends TicketBasePage {
 						item.add(new LinkPanel("pathName", "list", displayPath, BlobDiffPage.class,
 								WicketUtils.newPathParameter(repositoryName, currentPatchset.tip, path), true));
 					}
+					item.add(new DiffStatPanel("diffStat", entry.insertions, entry.deletions, true));
 				}
 
 				// quick links
@@ -1178,9 +1231,8 @@ public class TicketPage extends TicketBasePage {
 		};
 		panel.add(pathsView);
 
-		addPtReviewInstructions(user, repository, panel);
-		addGitReviewInstructions(user, repository, panel);
-		panel.add(createMergePanel(user, repository));
+		addPtCheckoutInstructions(user, repository, panel);
+		addGitCheckoutInstructions(user, repository, panel);
 
 		return panel;
 	}
@@ -1253,13 +1305,13 @@ public class TicketPage extends TicketBasePage {
 		return x;
 	}
 
-	protected void addGitReviewInstructions(UserModel user, RepositoryModel repository, MarkupContainer panel) {
+	protected void addGitCheckoutInstructions(UserModel user, RepositoryModel repository, MarkupContainer panel) {
 		panel.add(new Label("gitStep1", MessageFormat.format(getString("gb.stepN"), 1)));
 		panel.add(new Label("gitStep2", MessageFormat.format(getString("gb.stepN"), 2)));
 
 		String ticketBranch  = Repository.shortenRefName(PatchsetCommand.getTicketBranch(ticket.number));
 
-		String step1 = "git fetch";
+		String step1 = "git fetch origin";
 		String step2 = MessageFormat.format("git checkout {0} && git pull --ff-only\nOR\ngit checkout {0} && git reset --hard origin/{0}", ticketBranch);
 
 		panel.add(new Label("gitPreStep1", step1));
@@ -1269,7 +1321,7 @@ public class TicketPage extends TicketBasePage {
 		panel.add(createCopyFragment("gitCopyStep2", step2.replace("\n", " && ")));
 	}
 
-	protected void addPtReviewInstructions(UserModel user, RepositoryModel repository, MarkupContainer panel) {
+	protected void addPtCheckoutInstructions(UserModel user, RepositoryModel repository, MarkupContainer panel) {
 		String step1 = MessageFormat.format("pt checkout {0,number,0}", ticket.number);
 		panel.add(new Label("ptPreStep", step1));
 		panel.add(createCopyFragment("ptCopyStep", step1));
@@ -1449,15 +1501,14 @@ public class TicketPage extends TicketBasePage {
 	 * @param repository
 	 * @return the primary repository url
 	 */
-	protected String getRepositoryUrl(UserModel user, RepositoryModel repository) {
+	protected RepositoryUrl getRepositoryUrl(UserModel user, RepositoryModel repository) {
 		HttpServletRequest req = ((WebRequest) getRequest()).getHttpServletRequest();
-		String primaryurl = app().gitblit().getRepositoryUrls(req, user, repository).get(0).url;
-		String url = primaryurl;
-		try {
-			url = new URIish(primaryurl).setUser(null).toString();
-		} catch (Exception e) {
+		List<RepositoryUrl> urls = app().gitblit().getRepositoryUrls(req, user, repository);
+		if (ArrayUtils.isEmpty(urls)) {
+			return null;
 		}
-		return url;
+		RepositoryUrl primary = urls.get(0);
+		return primary;
 	}
 
 	/**
@@ -1487,14 +1538,14 @@ public class TicketPage extends TicketBasePage {
 		switch (type) {
 			case Rebase:
 			case Rebase_Squash:
-				typeCss = getLozengeClass(Status.Declined, false);
+				typeCss = TicketsUI.getLozengeClass(Status.Declined, false);
 				break;
 			case Squash:
 			case Amend:
-				typeCss = getLozengeClass(Status.On_Hold, false);
+				typeCss = TicketsUI.getLozengeClass(Status.On_Hold, false);
 				break;
 			case Proposal:
-				typeCss = getLozengeClass(Status.New, false);
+				typeCss = TicketsUI.getLozengeClass(Status.New, false);
 				break;
 			case FastForward:
 			default:

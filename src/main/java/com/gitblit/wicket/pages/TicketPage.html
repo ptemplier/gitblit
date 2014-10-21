@@ -33,7 +33,7 @@
 		
 	<!-- DISCUSSION TAB -->
 	<div class="tab-pane active" id="discussion">
-		<div class="row">
+		<div class="row" style="min-height: 500px;">
 				
 			<!-- LEFT SIDE -->
 			<div class="span8">		
@@ -298,11 +298,28 @@ pt push</pre>
 </wicket:fragment>
 
 
+<!-- CAN NOT PROPOSE FRAGMENT -->
+<wicket:fragment wicket:id="canNotProposeFragment">
+	<div class="featureWelcome">
+		<div class="row">
+			<div class="icon span2 hidden-phone"><i class="fa fa-ban"></i></div>
+			<div class="span9">		
+				<h1><wicket:message key="gb.canNotProposePatchset"></wicket:message></h1>
+				<div class="markdown">
+					<p><span wicket:id="reason"></span></p>
+				</div>
+			</div>
+		</div>
+	</div>
+</wicket:fragment>
+
+
 <!-- PATCHSET FRAGMENT -->
 <wicket:fragment wicket:id="patchsetFragment">
-	<div class="row" style="padding: 0px 0px 20px;">
+	<div class="row" style="padding: 0px;">
  		<div class="span12 attribution-border">
-			<div wicket:id="panel"></div>		
+ 			<div wicket:id="mergePanel" style="margin-bottom: 10px;"></div>
+			<div wicket:id="panel"></div>
 		</div>
 	</div>
 	
@@ -335,9 +352,8 @@ pt push</pre>
 
 <!-- COLLAPSIBLE PATCHSET (temp) -->
 <wicket:fragment wicket:id="collapsiblePatchsetFragment">
-<div wicket:id="mergePanel" style="margin-bottom: 10px;"></div>
 <div class="accordion" id="accordionPatchset" style="clear:both;margin: 0px;">
-<div class="patch-group">
+<div class="patch-group" style="margin-bottom: 20px;">
    	<div class="accordion-heading">
 		<div class="attribution-patch-pullright">	
 			<div style="padding-bottom: 2px;"> 
@@ -580,7 +596,7 @@ pt push</pre>
        		quality="high"
        		wmode="transparent"
        		scale="noscale"
-       		allowScriptAccess="always"></object>
+       		allowScriptAccess="sameDomain"></object>
 </wicket:fragment>
 	
 </wicket:extend>    

@@ -22,10 +22,19 @@ import com.gitblit.models.Mailing;
 public interface INotificationManager extends IManager {
 
 	/**
+	 * Returns true if the email service is configured and ready to send notifications.
+	 *
+	 * @return true if the email service is operational
+	 * @since 1.6.0
+	 */
+	boolean isSendingMail();
+
+	/**
 	 * Notify the administrators by email.
 	 *
 	 * @param subject
 	 * @param message
+ 	 * @since 1.4.0
 	 */
 	void sendMailToAdministrators(String subject, String message);
 
@@ -35,6 +44,7 @@ public interface INotificationManager extends IManager {
 	 * @param subject
 	 * @param message
 	 * @param toAddresses
+ 	 * @since 1.4.0
 	 */
 	void sendMail(String subject, String message, Collection<String> toAddresses);
 
@@ -44,6 +54,7 @@ public interface INotificationManager extends IManager {
 	 * @param subject
 	 * @param message
 	 * @param toAddresses
+ 	 * @since 1.4.0
 	 */
 	void sendHtmlMail(String subject, String message, Collection<String> toAddresses);
 
@@ -52,6 +63,7 @@ public interface INotificationManager extends IManager {
 	 *
 	 * @param mailing
 	 * @return the mail message object
+ 	 * @since 1.4.0
 	 */
 	void send(Mailing mailing);
 

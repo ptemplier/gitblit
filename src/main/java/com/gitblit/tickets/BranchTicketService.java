@@ -43,6 +43,8 @@ import org.eclipse.jgit.lib.FileMode;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectInserter;
 import org.eclipse.jgit.lib.PersonIdent;
+import org.eclipse.jgit.lib.Ref;
+import org.eclipse.jgit.lib.RefRename;
 import org.eclipse.jgit.lib.RefUpdate;
 import org.eclipse.jgit.lib.RefUpdate.Result;
 import org.eclipse.jgit.lib.Repository;
@@ -56,6 +58,7 @@ import org.eclipse.jgit.treewalk.TreeWalk;
 import com.gitblit.Constants;
 import com.gitblit.git.ReceiveCommandEvent;
 import com.gitblit.manager.INotificationManager;
+import com.gitblit.manager.IPluginManager;
 import com.gitblit.manager.IRepositoryManager;
 import com.gitblit.manager.IRuntimeManager;
 import com.gitblit.manager.IUserManager;
@@ -80,7 +83,7 @@ import com.gitblit.utils.StringUtils;
  */
 public class BranchTicketService extends ITicketService implements RefsChangedListener {
 
-	public static final String BRANCH = "refs/gitblit/tickets";
+	public static final String BRANCH = "refs/meta/gitblit/tickets";
 
 	private static final String JOURNAL = "journal.json";
 
@@ -90,11 +93,13 @@ public class BranchTicketService extends ITicketService implements RefsChangedLi
 
 	public BranchTicketService(
 			IRuntimeManager runtimeManager,
+			IPluginManager pluginManager,
 			INotificationManager notificationManager,
 			IUserManager userManager,
 			IRepositoryManager repositoryManager) {
 
 		super(runtimeManager,
+				pluginManager,
 				notificationManager,
 				userManager,
 				repositoryManager);
@@ -187,23 +192,45 @@ public class BranchTicketService extends ITicketService implements RefsChangedLi
 	}
 
 	/**
-	 * Returns a RefModel for the refs/gitblit/tickets branch in the repository.
+	 * Returns a RefModel for the refs/meta/gitblit/tickets branch in the repository.
 	 * If the branch can not be found, null is returned.
 	 *
 	 * @return a refmodel for the gitblit tickets branch or null
 	 */
 	private RefModel getTicketsBranch(Repository db) {
-		List<RefModel> refs = JGitUtils.getRefs(db, Constants.R_GITBLIT);
+		List<RefModel> refs = JGitUtils.getRefs(db, "refs/");
+		Ref oldRef = null;
 		for (RefModel ref : refs) {
 			if (ref.reference.getName().equals(BRANCH)) {
 				return ref;
+			} else if (ref.reference.getName().equals("refs/gitblit/tickets")) {
+				oldRef = ref.reference;
+			}
+		}
+		if (oldRef != null) {
+			// rename old ref to refs/meta/gitblit/tickets
+			RefRename cmd;
+			try {
+				cmd = db.renameRef(oldRef.getName(), BRANCH);
+				cmd.setRefLogIdent(new PersonIdent("Gitblit", "gitblit@localhost"));
+				cmd.setRefLogMessage("renamed " + oldRef.getName() + " => " + BRANCH);
+				Result res = cmd.rename();
+				switch (res) {
+				case RENAMED:
+					log.info(db.getDirectory() + " " + cmd.getRefLogMessage());
+					return getTicketsBranch(db);
+				default:
+					log.error("failed to rename " + oldRef.getName() + " => " + BRANCH + " (" + res.name() + ")");
+				}
+			} catch (IOException e) {
+				log.error("failed to rename tickets branch", e);
 			}
 		}
 		return null;
 	}
 
 	/**
-	 * Creates the refs/gitblit/tickets branch.
+	 * Creates the refs/meta/gitblit/tickets branch.
 	 * @param db
 	 */
 	private void createTicketsBranch(Repository db) {
@@ -216,7 +243,7 @@ public class BranchTicketService extends ITicketService implements RefsChangedLi
 	 * folder with the remaining characters as a subfolder within that folder.
 	 *
 	 * @param ticketId
-	 * @return the root path of the ticket content on the refs/gitblit/tickets branch
+	 * @return the root path of the ticket content on the refs/meta/gitblit/tickets branch
 	 */
 	private String toTicketPath(long ticketId) {
 		StringBuilder sb = new StringBuilder();
@@ -351,6 +378,37 @@ public class BranchTicketService extends ITicketService implements RefsChangedLi
 	}
 
 	/**
+	 * Returns the assigned ticket ids.
+	 *
+	 * @return the assigned ticket ids
+	 */
+	@Override
+	public synchronized Set<Long> getIds(RepositoryModel repository) {
+		Repository db = repositoryManager.getRepository(repository.name);
+		try {
+			if (getTicketsBranch(db) == null) {
+				return Collections.emptySet();
+			}
+			Set<Long> ids = new TreeSet<Long>();
+			List<PathModel> paths = JGitUtils.getDocuments(db, Arrays.asList("json"), BRANCH);
+			for (PathModel path : paths) {
+				String name = path.name.substring(path.name.lastIndexOf('/') + 1);
+				if (!JOURNAL.equals(name)) {
+					continue;
+				}
+				String tid = path.path.split("/")[2];
+				long ticketId = Long.parseLong(tid);
+				ids.add(ticketId);
+			}
+			return ids;
+		} finally {
+			if (db != null) {
+				db.close();
+			}
+		}
+	}
+
+	/**
 	 * Assigns a new ticket id.
 	 *
 	 * @param repository
@@ -371,16 +429,10 @@ public class BranchTicketService extends ITicketService implements RefsChangedLi
 			}
 			AtomicLong lastId = lastAssignedId.get(repository.name);
 			if (lastId.get() <= 0) {
-				List<PathModel> paths = JGitUtils.getDocuments(db, Arrays.asList("json"), BRANCH);
-				for (PathModel path : paths) {
-					String name = path.name.substring(path.name.lastIndexOf('/') + 1);
-					if (!JOURNAL.equals(name)) {
-						continue;
-					}
-					String tid = path.path.split("/")[2];
-					long ticketId = Long.parseLong(tid);
-					if (ticketId > lastId.get()) {
-						lastId.set(ticketId);
+				Set<Long> ids = getIds(repository);
+				for (long id : ids) {
+					if (id > lastId.get()) {
+						lastId.set(id);
 					}
 				}
 			}
@@ -493,6 +545,28 @@ public class BranchTicketService extends ITicketService implements RefsChangedLi
 				ticket.number = ticketId;
 			}
 			return ticket;
+		} finally {
+			db.close();
+		}
+	}
+
+	/**
+	 * Retrieves the journal for the ticket.
+	 *
+	 * @param repository
+	 * @param ticketId
+	 * @return a journal, if it exists, otherwise null
+	 */
+	@Override
+	protected List<Change> getJournalImpl(RepositoryModel repository, long ticketId) {
+		Repository db = repositoryManager.getRepository(repository.name);
+		try {
+			List<Change> changes = getJournal(db, ticketId);
+			if (ArrayUtils.isEmpty(changes)) {
+				log.warn("Empty journal for {}:{}", repository, ticketId);
+				return null;
+			}
+			return changes;
 		} finally {
 			db.close();
 		}
@@ -632,7 +706,9 @@ public class BranchTicketService extends ITicketService implements RefsChangedLi
 						ticket.number, db.getDirectory()), t);
 			} finally {
 				// release the treewalk
-				treeWalk.release();
+				if (treeWalk != null) {
+					treeWalk.release();
+				}
 			}
 		} finally {
 			db.close();
@@ -747,8 +823,12 @@ public class BranchTicketService extends ITicketService implements RefsChangedLi
 		List<DirCacheEntry> list = new ArrayList<DirCacheEntry>();
 		TreeWalk tw = null;
 		try {
-			tw = new TreeWalk(db);
 			ObjectId treeId = db.resolve(BRANCH + "^{tree}");
+			if (treeId == null) {
+				// branch does not exist yet, could be migrating tickets
+				return list;
+			}
+			tw = new TreeWalk(db);
 			int hIdx = tw.addTree(treeId);
 			tw.setRecursive(true);
 
@@ -848,7 +928,9 @@ public class BranchTicketService extends ITicketService implements RefsChangedLi
 		} catch (Exception e) {
 			log.error(null, e);
 		} finally {
-			db.close();
+			if (db != null) {
+				db.close();
+			}
 		}
 		return false;
 	}

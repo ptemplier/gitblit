@@ -37,7 +37,6 @@ public class MarkdownTextArea extends TextArea {
 
 	public MarkdownTextArea(String id, final IModel<String> previewModel, final Label previewLabel) {
 		super(id);
-		this.repositoryName = repositoryName;
 		setModel(new PropertyModel(this, "text"));
 		add(new AjaxFormComponentUpdatingBehavior("onblur") {
 			private static final long serialVersionUID = 1L;
@@ -71,7 +70,8 @@ public class MarkdownTextArea extends TextArea {
 			return;
 		}
 		String html = MarkdownUtils.transformGFM(GitBlitWebApp.get().settings(), text, repositoryName);
-		previewModel.setObject(html);
+		String safeHtml = GitBlitWebApp.get().xssFilter().relaxed(html);
+		previewModel.setObject(safeHtml);
 	}
 
 	public String getText() {

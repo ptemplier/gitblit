@@ -20,10 +20,10 @@ import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.beust.jcommander.JCommander;
-import com.beust.jcommander.Parameter;
-import com.beust.jcommander.ParameterException;
-import com.beust.jcommander.Parameters;
+import org.kohsuke.args4j.CmdLineException;
+import org.kohsuke.args4j.CmdLineParser;
+import org.kohsuke.args4j.Option;
+
 import com.gitblit.manager.IRepositoryManager;
 import com.gitblit.manager.IRuntimeManager;
 import com.gitblit.manager.RepositoryManager;
@@ -33,6 +33,8 @@ import com.gitblit.tickets.FileTicketService;
 import com.gitblit.tickets.ITicketService;
 import com.gitblit.tickets.RedisTicketService;
 import com.gitblit.utils.StringUtils;
+import com.gitblit.utils.XssFilter;
+import com.gitblit.utils.XssFilter.AllowXssFilter;
 
 /**
  * A command-line tool to reindex all tickets in all repositories when the
@@ -66,15 +68,15 @@ public class ReindexTickets {
 
 		Params.baseFolder = folder;
 		Params params = new Params();
-		JCommander jc = new JCommander(params);
+		CmdLineParser parser = new CmdLineParser(params);
 		try {
-			jc.parse(filtered.toArray(new String[filtered.size()]));
+			parser.parseArgument(filtered);
 			if (params.help) {
-				reindex.usage(jc, null);
+				reindex.usage(parser, null);
 				return;
 			}
-		} catch (ParameterException t) {
-			reindex.usage(jc, t);
+		} catch (CmdLineException t) {
+			reindex.usage(parser, t);
 			return;
 		}
 
@@ -94,10 +96,10 @@ public class ReindexTickets {
 	/**
 	 * Display the command line usage of ReindexTickets.
 	 *
-	 * @param jc
+	 * @param parser
 	 * @param t
 	 */
-	protected final void usage(JCommander jc, ParameterException t) {
+	protected final void usage(CmdLineParser parser, CmdLineException t) {
 		System.out.println(Constants.BORDER);
 		System.out.println(Constants.getGitBlitVersion());
 		System.out.println(Constants.BORDER);
@@ -106,8 +108,8 @@ public class ReindexTickets {
 			System.out.println(t.getMessage());
 			System.out.println();
 		}
-		if (jc != null) {
-			jc.usage();
+		if (parser != null) {
+			parser.printUsage(System.out);
 			System.out
 					.println("\nExample:\n  java -gitblit.jar com.gitblit.ReindexTickets --baseFolder c:\\gitblit-data");
 		}
@@ -126,8 +128,9 @@ public class ReindexTickets {
 		settings.overrideSetting(Keys.git.enableMirroring, false);
 		settings.overrideSetting(Keys.web.activityCacheDays, 0);
 
-		IRuntimeManager runtimeManager = new RuntimeManager(settings, baseFolder).start();
-		IRepositoryManager repositoryManager = new RepositoryManager(runtimeManager, null).start();
+		XssFilter xssFilter = new AllowXssFilter();
+		IRuntimeManager runtimeManager = new RuntimeManager(settings, xssFilter, baseFolder).start();
+		IRepositoryManager repositoryManager = new RepositoryManager(runtimeManager, null, null).start();
 
 		String serviceName = settings.getString(Keys.tickets.service, BranchTicketService.class.getSimpleName());
 		if (StringUtils.isEmpty(serviceName)) {
@@ -139,13 +142,13 @@ public class ReindexTickets {
 			Class<?> serviceClass = Class.forName(serviceName);
 			if (RedisTicketService.class.isAssignableFrom(serviceClass)) {
 				// Redis ticket service
-				ticketService = new RedisTicketService(runtimeManager, null, null, repositoryManager).start();
+				ticketService = new RedisTicketService(runtimeManager, null, null, null, repositoryManager).start();
 			} else if (BranchTicketService.class.isAssignableFrom(serviceClass)) {
 				// Branch ticket service
-				ticketService = new BranchTicketService(runtimeManager, null, null, repositoryManager).start();
+				ticketService = new BranchTicketService(runtimeManager, null, null, null, repositoryManager).start();
 			} else if (FileTicketService.class.isAssignableFrom(serviceClass)) {
 				// File ticket service
-				ticketService = new FileTicketService(runtimeManager, null, null, repositoryManager).start();
+				ticketService = new FileTicketService(runtimeManager, null, null, null, repositoryManager).start();
 			} else {
 				System.err.println("Unknown ticket service " + serviceName);
 				System.exit(1);
@@ -162,22 +165,21 @@ public class ReindexTickets {
 	}
 
 	/**
-	 * JCommander Parameters.
+	 * Parameters.
 	 */
-	@Parameters(separators = " ")
 	public static class Params {
 
 		public static String baseFolder;
 
-		@Parameter(names = { "-h", "--help" }, description = "Show this help")
+		@Option(name = "--help", aliases = { "-h"}, usage = "Show this help")
 		public Boolean help = false;
 
 		private final FileSettings FILESETTINGS = new FileSettings(new File(baseFolder, Constants.PROPERTIES_FILE).getAbsolutePath());
 
-		@Parameter(names = { "--repositoriesFolder" }, description = "Git Repositories Folder")
+		@Option(name = "--repositoriesFolder", usage = "Git Repositories Folder", metaVar = "PATH")
 		public String repositoriesFolder = FILESETTINGS.getString(Keys.git.repositoriesFolder, "git");
 
-		@Parameter(names = { "--settings" }, description = "Path to alternative settings")
+		@Option(name = "--settings", usage = "Path to alternative settings", metaVar = "FILE")
 		public String settingsfile;
 	}
 }

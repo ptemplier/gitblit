@@ -20,10 +20,12 @@ import java.util.List;
 import org.apache.wicket.PageParameters;
 import org.apache.wicket.markup.html.basic.Label;
 import org.apache.wicket.markup.html.link.BookmarkablePageLink;
+import org.apache.wicket.markup.html.link.ExternalLink;
 import org.apache.wicket.markup.html.panel.Fragment;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.RevCommit;
 
+import com.gitblit.servlet.RawServlet;
 import com.gitblit.utils.BugtraqProcessor;
 import com.gitblit.utils.JGitUtils;
 import com.gitblit.utils.StringUtils;
@@ -41,7 +43,7 @@ public class DocPage extends RepositoryPage {
 		super(params);
 
 		final String path = WicketUtils.getPath(params).replace("%2f", "/").replace("%2F", "/");
-		MarkupProcessor processor = new MarkupProcessor(app().settings());
+		MarkupProcessor processor = new MarkupProcessor(app().settings(), app().xssFilter());
 
 		Repository r = getRepository();
 		RevCommit commit = JGitUtils.getCommit(r, objectId);
@@ -67,6 +69,10 @@ public class DocPage extends RepositoryPage {
 			}
 		}
 
+		if (markupText == null) {
+			markupText = "";
+		}
+
 		BugtraqProcessor bugtraq = new BugtraqProcessor(app().settings());
 		markupText = bugtraq.processText(getRepository(), repositoryName, markupText);
 
@@ -83,8 +89,8 @@ public class DocPage extends RepositoryPage {
 				WicketUtils.newPathParameter(repositoryName, objectId, documentPath)));
 		fragment.add(new BookmarkablePageLink<Void>("historyLink", HistoryPage.class,
 				WicketUtils.newPathParameter(repositoryName, objectId, documentPath)));
-		fragment.add(new BookmarkablePageLink<Void>("rawLink", RawPage.class, WicketUtils.newPathParameter(
-				repositoryName, objectId, documentPath)));
+		String rawUrl = RawServlet.asLink(getContextUrl(), repositoryName, objectId, documentPath);
+		fragment.add(new ExternalLink("rawLink", rawUrl));
 
 		fragment.add(new Label("content", markupDoc.html).setEscapeModelStrings(false));
 		add(fragment);
@@ -93,6 +99,11 @@ public class DocPage extends RepositoryPage {
 	@Override
 	protected String getPageName() {
 		return getString("gb.docs");
+	}
+
+	@Override
+	protected boolean isCommitPage() {
+		return true;
 	}
 
 	@Override

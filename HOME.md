@@ -18,15 +18,11 @@ This documentation is the source content from which the [Gitblit website](http:/
 [[src/site/setup_war.mkd]]
 [[src/site/upgrade_war.mkd]]
 
-### Gitblit Express for OpenShift
-
-[[src/site/setup_express.mkd]]
-[[src/site/upgrade_express.mkd]]
-
 ### General Configuration & Administration
 
 [[src/site/setup_authentication.mkd]]
-[[src/site/setup_client.mkd]]
+[[src/site/setup_transport_http.mkd]]
+[[src/site/setup_transport_ssh.mkd]]
 [[src/site/setup_clientmenus.mkd]]
 [[src/site/eclipse_plugin.mkd]]
 [[src/site/setup_mirrors.mkd]]
@@ -45,6 +41,11 @@ This documentation is the source content from which the [Gitblit website](http:/
 [[src/site/tickets_barnum.mkd]]
 [[src/site/tickets_setup.mkd]]
 [[src/site/tickets_replication.mkd]]
+
+### Gitblit Plugins
+
+[[src/site/plugins_overview.mkd]]
+[[src/site/plugins_extensions.mkd]]
 
 ### Other Pages
 

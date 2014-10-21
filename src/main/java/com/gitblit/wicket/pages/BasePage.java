@@ -45,6 +45,7 @@ import org.apache.wicket.markup.html.panel.FeedbackPanel;
 import org.apache.wicket.protocol.http.RequestUtils;
 import org.apache.wicket.protocol.http.WebResponse;
 import org.apache.wicket.protocol.http.servlet.ServletWebRequest;
+import org.apache.wicket.request.target.basic.RedirectRequestTarget;
 import org.apache.wicket.util.time.Duration;
 import org.apache.wicket.util.time.Time;
 import org.slf4j.Logger;
@@ -98,6 +99,10 @@ public abstract class BasePage extends SessionPage {
 		}
 	}
 
+	protected String getContextUrl() {
+		return getRequest().getRelativePathPrefixToContextRoot();
+	}
+
 	protected String getCanonicalUrl() {
 		return getCanonicalUrl(getClass(), getPageParameters());
 	}
@@ -106,6 +111,15 @@ public abstract class BasePage extends SessionPage {
 		String relativeUrl = urlFor(clazz, params).toString();
 		String canonicalUrl = RequestUtils.toAbsolutePath(relativeUrl);
 		return canonicalUrl;
+	}
+
+	protected void redirectTo(Class<? extends BasePage> pageClass) {
+		redirectTo(pageClass, null);
+	}
+
+	protected void redirectTo(Class<? extends BasePage> pageClass, PageParameters parameters) {
+		String absoluteUrl = getCanonicalUrl(pageClass, parameters);
+		getRequestCycle().setRequestTarget(new RedirectRequestTarget(absoluteUrl));
 	}
 
 	protected String getLanguageCode() {
@@ -162,6 +176,9 @@ public abstract class BasePage extends SessionPage {
 			// use default Wicket caching behavior
 			super.setHeaders(response);
 		}
+
+		// XRF vulnerability. issue-500 / ticket-166
+		response.setHeader("X-Frame-Options", "SAMEORIGIN");
 	}
 
 	/**
@@ -488,4 +505,5 @@ public abstract class BasePage extends SessionPage {
 		}
 		return sb.toString();
 	}
+
 }

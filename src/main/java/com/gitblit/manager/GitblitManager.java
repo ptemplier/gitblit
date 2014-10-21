@@ -27,15 +27,25 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.TimeZone;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
+import org.eclipse.jgit.api.CloneCommand;
+import org.eclipse.jgit.api.FetchCommand;
+import org.eclipse.jgit.api.Git;
+import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.lib.Repository;
+import org.eclipse.jgit.transport.RefSpec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import ro.fortsoft.pf4j.PluginState;
+import ro.fortsoft.pf4j.PluginWrapper;
+import ro.fortsoft.pf4j.Version;
 
 import com.gitblit.Constants;
 import com.gitblit.Constants.AccessPermission;
@@ -52,6 +62,9 @@ import com.gitblit.models.ForkModel;
 import com.gitblit.models.GitClientApplication;
 import com.gitblit.models.Mailing;
 import com.gitblit.models.Metric;
+import com.gitblit.models.PluginRegistry.InstallState;
+import com.gitblit.models.PluginRegistry.PluginRegistration;
+import com.gitblit.models.PluginRegistry.PluginRelease;
 import com.gitblit.models.ProjectModel;
 import com.gitblit.models.RegistrantAccessPermission;
 import com.gitblit.models.RepositoryModel;
@@ -63,12 +76,14 @@ import com.gitblit.models.SettingModel;
 import com.gitblit.models.TeamModel;
 import com.gitblit.models.UserModel;
 import com.gitblit.tickets.ITicketService;
+import com.gitblit.transport.ssh.IPublicKeyManager;
+import com.gitblit.transport.ssh.SshKey;
 import com.gitblit.utils.ArrayUtils;
 import com.gitblit.utils.HttpUtils;
-import com.gitblit.utils.JGitUtils;
 import com.gitblit.utils.JsonUtils;
 import com.gitblit.utils.ObjectCache;
 import com.gitblit.utils.StringUtils;
+import com.gitblit.utils.XssFilter;
 import com.google.gson.Gson;
 import com.google.gson.JsonIOException;
 import com.google.gson.JsonSyntaxException;
@@ -96,11 +111,15 @@ public class GitblitManager implements IGitblit {
 
 	protected final IRuntimeManager runtimeManager;
 
+	protected final IPluginManager pluginManager;
+
 	protected final INotificationManager notificationManager;
 
 	protected final IUserManager userManager;
 
 	protected final IAuthenticationManager authenticationManager;
+
+	protected final IPublicKeyManager publicKeyManager;
 
 	protected final IRepositoryManager repositoryManager;
 
@@ -110,18 +129,22 @@ public class GitblitManager implements IGitblit {
 
 	public GitblitManager(
 			IRuntimeManager runtimeManager,
+			IPluginManager pluginManager,
 			INotificationManager notificationManager,
 			IUserManager userManager,
 			IAuthenticationManager authenticationManager,
+			IPublicKeyManager publicKeyManager,
 			IRepositoryManager repositoryManager,
 			IProjectManager projectManager,
 			IFederationManager federationManager) {
 
 		this.settings = runtimeManager.getSettings();
 		this.runtimeManager = runtimeManager;
+		this.pluginManager = pluginManager;
 		this.notificationManager = notificationManager;
 		this.userManager = userManager;
 		this.authenticationManager = authenticationManager;
+		this.publicKeyManager = publicKeyManager;
 		this.repositoryManager = repositoryManager;
 		this.projectManager = projectManager;
 		this.federationManager = federationManager;
@@ -159,7 +182,33 @@ public class GitblitManager implements IGitblit {
 
 		// clone the repository
 		try {
-			JGitUtils.cloneRepository(repositoryManager.getRepositoriesFolder(), cloneName, fromUrl, true, null);
+			Repository canonical = getRepository(repository.name);
+			File folder = new File(repositoryManager.getRepositoriesFolder(), cloneName);
+			CloneCommand clone = new CloneCommand();
+			clone.setBare(true);
+
+			// fetch branches with exclusions
+			Collection<Ref> branches = canonical.getRefDatabase().getRefs(Constants.R_HEADS).values();
+			List<String> branchesToClone = new ArrayList<String>();
+			for (Ref branch : branches) {
+				String name = branch.getName();
+				if (name.startsWith(Constants.R_TICKET)) {
+					// exclude ticket branches
+					continue;
+				}
+				branchesToClone.add(name);
+			}
+			clone.setBranchesToClone(branchesToClone);
+			clone.setURI(fromUrl);
+			clone.setDirectory(folder);
+			Git git = clone.call();
+
+			// fetch tags
+			FetchCommand fetch  = git.fetch();
+			fetch.setRefSpecs(new RefSpec("+refs/tags/*:refs/tags/*"));
+			fetch.call();
+
+			git.getRepository().close();
 		} catch (Exception e) {
 			throw new GitBlitException(e);
 		}
@@ -168,6 +217,13 @@ public class GitblitManager implements IGitblit {
 		RepositoryModel cloneModel = repository.cloneAs(cloneName);
 		// owner has REWIND/RW+ permissions
 		cloneModel.addOwner(user.username);
+
+		// ensure initial access restriction of the fork
+		// is not lower than the source repository  (issue-495/ticket-167)
+		if (repository.accessRestriction.exceeds(cloneModel.accessRestriction)) {
+			cloneModel.accessRestriction = repository.accessRestriction;
+		}
+
 		repositoryManager.updateRepositoryModel(cloneName, cloneModel, false);
 
 		// add the owner of the source repository to the clone's access list
@@ -292,6 +348,9 @@ public class GitblitManager implements IGitblit {
 					repositoryManager.updateRepositoryModel(model.name, model, false);
 				}
 			}
+
+			// rename the user's ssh public keystore
+			getPublicKeyManager().renameUser(username, user.username);
 		}
 		if (!userManager.updateUserModel(username, user)) {
 			throw new GitBlitException("Failed to update user!");
@@ -391,7 +450,7 @@ public class GitblitManager implements IGitblit {
 		// no user definitions, use system definitions
 		if (!clientApplications.hasCurrent("system", new Date(0))) {
 			try {
-				InputStream is = getClass().getResourceAsStream("/clientapps.json");
+				InputStream is = GitblitManager.class.getResourceAsStream("/clientapps.json");
 				Collection<GitClientApplication> clients = readClientApplications(is);
 				is.close();
 				if (clients != null) {
@@ -433,7 +492,7 @@ public class GitblitManager implements IGitblit {
 			// Read bundled Gitblit properties to extract setting descriptions.
 			// This copy is pristine and only used for populating the setting
 			// models map.
-			InputStream is = getClass().getResourceAsStream("/reference.properties");
+			InputStream is = GitblitManager.class.getResourceAsStream("/reference.properties");
 			BufferedReader propertiesReader = new BufferedReader(new InputStreamReader(is));
 			StringBuilder description = new StringBuilder();
 			SettingModel setting = new SettingModel();
@@ -493,6 +552,11 @@ public class GitblitManager implements IGitblit {
 		throw new RuntimeException("This class does not have a ticket service!");
 	}
 
+	@Override
+	public IPublicKeyManager getPublicKeyManager() {
+		return publicKeyManager;
+	}
+
 	/*
 	 * ISTOREDSETTINGS
 	 *
@@ -546,8 +610,28 @@ public class GitblitManager implements IGitblit {
 	}
 
 	@Override
+	public boolean isServingHTTP() {
+		return runtimeManager.isServingHTTP();
+	}
+
+	@Override
+	public boolean isServingGIT() {
+		return runtimeManager.isServingGIT();
+	}
+
+	@Override
+	public boolean isServingSSH() {
+		return runtimeManager.isServingSSH();
+	}
+
+	@Override
 	public TimeZone getTimezone() {
 		return runtimeManager.getTimezone();
+	}
+
+	@Override
+	public Locale getLocale() {
+		return runtimeManager.getLocale();
 	}
 
 	@Override
@@ -580,9 +664,19 @@ public class GitblitManager implements IGitblit {
 		return runtimeManager.getStatus();
 	}
 
+	@Override
+	public XssFilter getXssFilter() {
+		return runtimeManager.getXssFilter();
+	}
+
 	/*
 	 * NOTIFICATION MANAGER
 	 */
+
+	@Override
+	public boolean isSendingMail() {
+		return notificationManager.isSendingMail();
+	}
 
 	@Override
 	public void sendMailToAdministrators(String subject, String message) {
@@ -621,6 +715,12 @@ public class GitblitManager implements IGitblit {
 		}
 		return user;
 	}
+
+	@Override
+	public UserModel authenticate(String username, SshKey key) {
+		return authenticationManager.authenticate(username, key);
+	}
+
 	@Override
 	public UserModel authenticate(HttpServletRequest httpRequest, boolean requiresCertificate) {
 		UserModel user = authenticationManager.authenticate(httpRequest, requiresCertificate);
@@ -636,13 +736,25 @@ public class GitblitManager implements IGitblit {
 	}
 
 	@Override
+	@Deprecated
 	public void setCookie(HttpServletResponse response, UserModel user) {
 		authenticationManager.setCookie(response, user);
 	}
 
 	@Override
+	public void setCookie(HttpServletRequest request, HttpServletResponse response, UserModel user) {
+		authenticationManager.setCookie(request, response, user);
+	}
+
+	@Override
+	@Deprecated
 	public void logout(HttpServletResponse response, UserModel user) {
 		authenticationManager.logout(response, user);
+	}
+
+	@Override
+	public void logout(HttpServletRequest request, HttpServletResponse response, UserModel user) {
+		authenticationManager.logout(request, response, user);
 	}
 
 	@Override
@@ -862,6 +974,11 @@ public class GitblitManager implements IGitblit {
 	}
 
 	@Override
+	public void resetRepositoryCache(String repositoryName) {
+		repositoryManager.resetRepositoryCache(repositoryName);
+	}
+
+	@Override
 	public List<String> getRepositoryList() {
 		return repositoryManager.getRepositoryList();
 	}
@@ -874,6 +991,11 @@ public class GitblitManager implements IGitblit {
 	@Override
 	public Repository getRepository(String repositoryName, boolean logError) {
 		return repositoryManager.getRepository(repositoryName, logError);
+	}
+
+	@Override
+	public List<RepositoryModel> getRepositoryModels() {
+		return repositoryManager.getRepositoryModels();
 	}
 
 	@Override
@@ -940,6 +1062,11 @@ public class GitblitManager implements IGitblit {
 	@Override
 	public void updateConfiguration(Repository r, RepositoryModel repository) {
 		repositoryManager.updateConfiguration(r, repository);
+	}
+
+	@Override
+	public boolean canDelete(RepositoryModel model) {
+		return repositoryManager.canDelete(model);
 	}
 
 	@Override
@@ -1123,5 +1250,109 @@ public class GitblitManager implements IGitblit {
 	@Override
 	public boolean isIdle(Repository repository) {
 		return repositoryManager.isIdle(repository);
+	}
+
+	/*
+	 * PLUGIN MANAGER
+	 */
+
+	@Override
+	public Version getSystemVersion() {
+		return pluginManager.getSystemVersion();
+	}
+
+	@Override
+	public void startPlugins() {
+		pluginManager.startPlugins();
+	}
+
+	@Override
+	public void stopPlugins() {
+		pluginManager.stopPlugins();
+	}
+
+	@Override
+	public List<PluginWrapper> getPlugins() {
+		return pluginManager.getPlugins();
+	}
+
+	@Override
+	public PluginWrapper getPlugin(String pluginId) {
+		return pluginManager.getPlugin(pluginId);
+	}
+
+	@Override
+	public List<Class<?>> getExtensionClasses(String pluginId) {
+		return pluginManager.getExtensionClasses(pluginId);
+	}
+
+	@Override
+	public <T> List<T> getExtensions(Class<T> clazz) {
+		return pluginManager.getExtensions(clazz);
+	}
+
+	@Override
+	public PluginWrapper whichPlugin(Class<?> clazz) {
+		return pluginManager.whichPlugin(clazz);
+	}
+
+	@Override
+	public PluginState startPlugin(String pluginId) {
+		return pluginManager.startPlugin(pluginId);
+	}
+
+	@Override
+	public PluginState stopPlugin(String pluginId) {
+		return pluginManager.stopPlugin(pluginId);
+	}
+
+	@Override
+	public boolean disablePlugin(String pluginId) {
+		return pluginManager.disablePlugin(pluginId);
+	}
+
+	@Override
+	public boolean enablePlugin(String pluginId) {
+		return pluginManager.enablePlugin(pluginId);
+	}
+
+	@Override
+	public boolean uninstallPlugin(String pluginId) {
+		return pluginManager.uninstallPlugin(pluginId);
+	}
+
+	@Override
+	public boolean refreshRegistry(boolean verifyChecksum) {
+		return pluginManager.refreshRegistry(verifyChecksum);
+	}
+
+	@Override
+	public boolean installPlugin(String url, boolean verifyChecksum) throws IOException {
+		return pluginManager.installPlugin(url, verifyChecksum);
+	}
+
+	@Override
+	public boolean upgradePlugin(String pluginId, String url, boolean verifyChecksum) throws IOException {
+		return pluginManager.upgradePlugin(pluginId, url, verifyChecksum);
+	}
+
+	@Override
+	public List<PluginRegistration> getRegisteredPlugins() {
+		return pluginManager.getRegisteredPlugins();
+	}
+
+	@Override
+	public List<PluginRegistration> getRegisteredPlugins(InstallState state) {
+		return pluginManager.getRegisteredPlugins(state);
+	}
+
+	@Override
+	public PluginRegistration lookupPlugin(String pluginId) {
+		return pluginManager.lookupPlugin(pluginId);
+	}
+
+	@Override
+	public PluginRelease lookupRelease(String pluginId, String version) {
+		return pluginManager.lookupRelease(pluginId, version);
 	}
 }

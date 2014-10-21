@@ -89,7 +89,7 @@ public class CommentPanel extends BasePanel {
 			}
 		}.setVisible(ticket != null && ticket.number > 0));
 
-		final IModel<String> markdownPreviewModel = new Model<String>();
+		final IModel<String> markdownPreviewModel = Model.of();
 		markdownPreview = new Label("markdownPreview", markdownPreviewModel);
 		markdownPreview.setEscapeModelStrings(false);
 		markdownPreview.setOutputMarkupId(true);

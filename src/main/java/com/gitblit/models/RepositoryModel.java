@@ -88,6 +88,7 @@ public class RepositoryModel implements Serializable, Comparable<RepositoryModel
 	public boolean acceptNewPatchsets;
 	public boolean acceptNewTickets;
 	public boolean requireApproval;
+	public String mergeTo;
 
 	public transient boolean isCollectingGarbage;
 	public Date lastGC;
@@ -181,9 +182,9 @@ public class RepositoryModel implements Serializable, Comparable<RepositoryModel
 
 	public boolean isOwner(String username) {
 		if (StringUtils.isEmpty(username) || ArrayUtils.isEmpty(owners)) {
-			return false;
+			return isUsersPersonalRepository(username);
 		}
-		return owners.contains(username.toLowerCase());
+		return owners.contains(username.toLowerCase()) || isUsersPersonalRepository(username);
 	}
 
 	public boolean isPersonalRepository() {

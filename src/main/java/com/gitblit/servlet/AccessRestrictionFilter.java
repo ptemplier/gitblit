@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.text.MessageFormat;
 
 import javax.servlet.FilterChain;
+import javax.servlet.FilterConfig;
 import javax.servlet.ServletException;
 import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
@@ -54,8 +55,8 @@ public abstract class AccessRestrictionFilter extends AuthenticationFilter {
 	protected IRepositoryManager repositoryManager;
 
 	@Override
-	protected void inject(ObjectGraph dagger) {
-		super.inject(dagger);
+	protected void inject(ObjectGraph dagger, FilterConfig filterConfig) {
+		super.inject(dagger, filterConfig);
 		this.runtimeManager = dagger.get(IRuntimeManager.class);
 		this.repositoryManager = dagger.get(IRepositoryManager.class);
 	}
@@ -140,6 +141,10 @@ public abstract class AccessRestrictionFilter extends AuthenticationFilter {
 
 		String fullUrl = getFullUrl(httpRequest);
 		String repository = extractRepositoryName(fullUrl);
+		if (StringUtils.isEmpty(repository)) {
+			httpResponse.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+			return;
+		}
 
 		if (repositoryManager.isCollectingGarbage(repository)) {
 			logger.info(MessageFormat.format("ARF: Rejecting request for {0}, busy collecting garbage!", repository));

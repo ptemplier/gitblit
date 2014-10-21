@@ -25,10 +25,13 @@ import java.text.MessageFormat;
 
 import org.apache.commons.io.IOUtils;
 import org.pegdown.LinkRenderer;
+import org.pegdown.ParsingTimeoutException;
 import org.pegdown.PegDownProcessor;
+import org.pegdown.ast.RootNode;
 
 import com.gitblit.IStoredSettings;
 import com.gitblit.Keys;
+import com.gitblit.wicket.MarkupProcessor.WorkaroundHtmlSerializer;
 
 /**
  * Utility methods for transforming raw markdown text to html.
@@ -72,9 +75,13 @@ public class MarkdownUtils {
 	 * @throws java.text.ParseException
 	 */
 	public static String transformMarkdown(String markdown, LinkRenderer linkRenderer) {
-		PegDownProcessor pd = new PegDownProcessor(ALL & ~SMARTYPANTS);
-		String html = pd.markdownToHtml(markdown, linkRenderer == null ? new LinkRenderer() : linkRenderer);
-		return html;
+		try {
+			PegDownProcessor pd = new PegDownProcessor(ALL & ~SMARTYPANTS);
+			RootNode astRoot = pd.parseMarkdown(markdown.toCharArray());
+			return new WorkaroundHtmlSerializer(linkRenderer == null ? new LinkRenderer() : linkRenderer).toHtml(astRoot);
+		} catch (ParsingTimeoutException e) {
+			return null;
+		}
 	}
 
 	/**
@@ -129,7 +136,7 @@ public class MarkdownUtils {
 		String canonicalUrl = settings.getString(Keys.web.canonicalUrl, "https://localhost:8443");
 
 		// emphasize and link mentions
-		String mentionReplacement = String.format(" **<a href=\"%1s/user/$1\">@$1</a>**", canonicalUrl);
+		String mentionReplacement = String.format(" **[@$1](%1s/user/$1)**", canonicalUrl);
 		text = text.replaceAll("\\s@([A-Za-z0-9-_]+)", mentionReplacement);
 
 		// link ticket refs
@@ -139,7 +146,7 @@ public class MarkdownUtils {
 		// link commit shas
 		int shaLen = settings.getInteger(Keys.web.shortCommitIdLength, 6);
 		String commitPattern = MessageFormat.format("\\s([A-Fa-f0-9]'{'{0}'}')([A-Fa-f0-9]'{'{1}'}')", shaLen, 40 - shaLen);
-		String commitReplacement = String.format(" <a class='commit' href='%1$s/commit?r=%2$s&h=$1$2'>$1</a>", canonicalUrl, repositoryName);
+		String commitReplacement = String.format(" [`$1`](%1$s/commit?r=%2$s&h=$1$2)", canonicalUrl, repositoryName);
 		text = text.replaceAll(commitPattern, commitReplacement);
 
 		String html = transformMarkdown(text);
